@@ -119,9 +119,9 @@ class BaseSingleEnv(BaseEnv):
 
         centerline_maintenance_reward = -0.05*np.abs(obs[1])
         yaw_maintenance_reward = 0.0 if np.abs(obs[3])<1.0 else -10
-        track_completion_reward = 500.0 if obs[0]>=0.99*self.track_len else 0
+        track_completion_reward = 1.0 if obs[0]>=0.95*self.track_len else 0
         progress_reward = 0.05*(obs[0] - self.track_len)
-        control_cost = -0.01 * action[0]**2 - 0.01 * action[1]**2
+        control_cost = -0.05 * action[0]**2 - 0.05 * action[1]**2
 
         reward = (reward_constraint + centerline_maintenance_reward + 
                     yaw_maintenance_reward + track_completion_reward + progress_reward + control_cost)
@@ -404,7 +404,7 @@ class BaseSingleEnv(BaseEnv):
             reward_history = []
             done_history = []
             train_step = 0
-            animate_dir_curr = animate_dir + '_' + str(traj_indx)
+            animate_dir_curr = os.path.join(animate_dir, f'traj_{traj_indx}')
             os.makedirs(animate_dir_curr, exist_ok=True)
             animate_prog_dir = os.path.join(animate_dir_curr, 'images')
             os.makedirs(animate_prog_dir, exist_ok=True)
@@ -516,10 +516,11 @@ class BaseSingleEnv(BaseEnv):
 
         return
 
-    def train_sac_agent(self, sac_agent, replay_buffer, L, args, max_episode_length, verbose=True):
+    def train_sac_agent(self, sac_agent, replay_buffer, L, args, max_episode_length, config_solver, verbose=True):
         episode, episode_reward, done = 0, 0, True
         reset_rejection_sampling_old = self.reset_rej_sampling
         self.reset_rej_sampling = False
+        animate_dir = make_dir(os.path.join(args.work_dir, 'animations'))
         model_dir = make_dir(os.path.join(args.work_dir, 'model'))
         buffer_dir = make_dir(os.path.join(args.work_dir, 'buffer'))
 
@@ -549,6 +550,12 @@ class BaseSingleEnv(BaseEnv):
                         for k, v in constraints.items():
                             print(f"{k}: {v[0, 1]:.1e}")
                         print("-----------------------------------------------------------")
+                    
+                    if episode % args.eval_freq == 0:
+                        _, _, _, _ = self.simulate_trajectory_with_sac_agent(
+                            T_rollout=max_episode_length, end_criterion='failure', sac_agent=sac_agent, verbose=verbose, num_trajs=2,
+                                sample_stochastically=False, should_animate=True, animate_dir=animate_dir + '_' + str(train_step), config_solver=config_solver,
+                            )
 
                     start_time = time.time()
                 #if train_step % args.log_interval == 0:

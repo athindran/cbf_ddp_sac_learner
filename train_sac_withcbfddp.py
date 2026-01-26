@@ -43,11 +43,11 @@ def parse_args():
     # train
     parser.add_argument('--agent', default='curl_sac', type=str)
     parser.add_argument('--init_steps', default=1000, type=int)
-    parser.add_argument('--num_train_steps', default=650000, type=int)
-    parser.add_argument('--batch_size', default=256, type=int)
+    parser.add_argument('--num_train_steps', default=350000, type=int)
+    parser.add_argument('--batch_size', default=128, type=int)
     parser.add_argument('--hidden_dim', default=256, type=int)
     # eval
-    parser.add_argument('--eval_freq', default=100, type=int)
+    parser.add_argument('--eval_freq', default=150, type=int)
     parser.add_argument('--num_eval_episodes', default=40, type=int)
     # critic
     parser.add_argument('--critic_lr', default=1e-4, type=float)
@@ -76,7 +76,7 @@ def parse_args():
     parser.add_argument('--alpha_beta', default=0.5, type=float)
     # misc
     parser.add_argument('--seed', default=123, type=int)
-    parser.add_argument('--work_dir', default='/Users/athindranrameshkumar/Documents/Code/cbf_ddp_softmax/model_store', type=str)
+    parser.add_argument('--work_dir', default='/Users/athindranrameshkumar/Documents/Code/cbf_ddp_sac_learner/model_store', type=str)
     parser.add_argument('--load_dir', default='None', type=str)
     parser.add_argument('--load_index', default=0, type=str)
     parser.add_argument('--save_tb', default=False, action='store_true')
@@ -278,7 +278,7 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, line_search, sto
 
     animate_dir = os.path.join(args.work_dir, 'animate')
 
-    env.train_sac_agent(sac_agent, replay_buffer, L, args, max_episode_length=max_iter_receding, verbose=False)
+    env.train_sac_agent(sac_agent, replay_buffer, L, args, max_episode_length=max_iter_receding,  config_solver=config_solver, verbose=False)
 
     obs_history, action_history, reward_history, done_history = env.simulate_trajectory_with_sac_agent(
          T_rollout=max_iter_receding, end_criterion='failure', sac_agent=sac_agent, verbose=True, num_trajs=10,
