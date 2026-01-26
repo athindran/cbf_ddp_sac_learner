@@ -138,7 +138,6 @@ def make_sac_agent(obs_shape, action_shape, args, device):
         critic_tau=args.critic_tau,
         critic_target_update_freq=args.critic_target_update_freq,
         log_interval=args.log_interval,
-        limit = args.actor_limit,
     )
 
 

@@ -138,7 +138,7 @@ class QFunction(nn.Module):
         self.trunk = nn.Sequential(
             nn.Linear(obs_dim + action_dim, hidden_dim), nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
-            nn.Linear(hidden_dim, 2 * action_shape[0])
+            nn.Linear(hidden_dim, 2 * action_dim)
         )
 
     def forward(self, obs, action):
