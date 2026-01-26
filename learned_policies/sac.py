@@ -16,16 +16,15 @@ def gaussian_logprob(noise, log_std):
     return residual - 0.5 * np.log(2 * np.pi) * noise.size(-1)
 
 
-def squash(mu, pi, log_pi, limit):
+def squash(mu, pi, log_pi):
     """Apply squashing function.
     See appendix C from https://arxiv.org/pdf/1812.05905.pdf.
     """
-    mu = limit*torch.tanh(mu)
+    mu = torch.tanh(mu)
     if pi is not None:
         scaledpi = torch.tanh(pi)
-        pi = limit*scaledpi
     if log_pi is not None:
-        log_pi -= torch.log(F.relu(limit*(1 - scaledpi**2)) + 1e-6).sum(-1, keepdim=True)
+        log_pi -= torch.log(F.relu((1 - scaledpi**2)) + 1e-6).sum(-1, keepdim=True)
     return mu, pi, log_pi
 
 
@@ -75,16 +74,17 @@ class DenseResidualBlock(nn.Module):
 class Actor(nn.Module):
     """MLP actor network."""
     def __init__(
-        self, obs_shape, action_shape, hidden_dim, log_std_min, log_std_max, limit=1.0
+        self, obs_shape, action_shape, hidden_dim, log_std_min, log_std_max
     ):
         super().__init__()
-        self.limit = limit
         self.log_std_min = log_std_min
         self.log_std_max = log_std_max
 
-        # Dense residual net for exploration.
-        self.trunk = DenseResidualBlock(input_dim=obs_shape[0], hidden_dim=hidden_dim, 
-                                        dropout_rate=0.1, out_dim=2 * action_shape[0])
+        self.trunk = nn.Sequential(
+            nn.Linear(obs_shape[0], hidden_dim), nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
+            nn.Linear(hidden_dim, 2 * action_shape[0])
+        )
 
         self.outputs = dict()
         self.apply(weight_init)
@@ -115,7 +115,7 @@ class Actor(nn.Module):
         else:
             log_pi = None
 
-        mu, pi, log_pi = squash(mu, pi, log_pi, self.limit)
+        mu, pi, log_pi = squash(mu, pi, log_pi)
 
         return mu, pi, log_pi, log_std
 
@@ -135,8 +135,11 @@ class QFunction(nn.Module):
     """MLP for q-function."""
     def __init__(self, obs_dim, action_dim, hidden_dim):
         super().__init__()
-        self.trunk = DenseResidualBlock(input_dim=obs_dim + action_dim, hidden_dim=hidden_dim, 
-                                        dropout_rate=0.1, out_dim=1)
+        self.trunk = nn.Sequential(
+            nn.Linear(obs_dim + action_dim, hidden_dim), nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
+            nn.Linear(hidden_dim, 2 * action_shape[0])
+        )
 
     def forward(self, obs, action):
         assert obs.size(0) == action.size(0)
@@ -206,7 +209,6 @@ class SacAgent(object):
         critic_tau=0.005,
         critic_target_update_freq=2,
         log_interval=100,
-        limit=1.0,
     ):
         """
         Training agent using SAC algorithm.
@@ -219,7 +221,7 @@ class SacAgent(object):
         self.log_interval = log_interval
         
         self.actor = Actor(
-            obs_shape, action_shape, hidden_dim, actor_log_std_min, actor_log_std_max, limit
+            obs_shape, action_shape, hidden_dim, actor_log_std_min, actor_log_std_max,
         ).to(device)
 
         self.critic = Critic(
@@ -252,7 +254,6 @@ class SacAgent(object):
             [self.log_alpha], lr=alpha_lr, betas=(alpha_beta, 0.999)
         )
 
-        self.cross_entropy_loss = nn.CrossEntropyLoss()
 
         self.train()
         self.critic_target.train()
