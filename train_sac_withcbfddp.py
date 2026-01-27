@@ -72,7 +72,7 @@ def parse_args():
     # sac
     parser.add_argument('--discount', default=0.99, type=float)
     parser.add_argument('--init_temperature', default=0.1, type=float)
-    parser.add_argument('--alpha_lr', default=5e-5, type=float)
+    parser.add_argument('--alpha_lr', default=1e-5, type=float)
     parser.add_argument('--alpha_beta', default=0.5, type=float)
     # misc
     parser.add_argument('--seed', default=12, type=int)
