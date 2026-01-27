@@ -115,15 +115,15 @@ class BaseSingleEnv(BaseEnv):
         constraint_values = np.empty((1,))
         for key, constraint_value in constraints.items():
             constraint_values = np.concatenate((constraint_values, constraint_value.ravel()))
-        reward_constraint = np.min(constraint_values, axis=0)
+        reward_constraint = min(np.min(constraint_values, axis=0), 0.0)
 
-        centerline_maintenance_reward = -0.05*np.abs(obs[1])
-        yaw_maintenance_reward = 0.0 if np.abs(obs[3])<1.0 else -10
-        track_completion_reward = 1.0 if obs[0]>=0.95*self.track_len else 0
-        progress_reward = 0.05*(obs[0] - self.track_len)
+        centerline_maintenance_reward = -0.01*np.abs(obs[1])
+        yaw_maintenance_reward = 0.0 if np.abs(obs[3])<1.0 else -0.5
+        track_completion_reward = 10.0 if obs[0]>=0.95*self.track_len else 0
+        progress_reward = 0.01*(obs[0] - self.track_len)
         control_cost = -0.05 * action[0]**2 - 0.05 * action[1]**2
 
-        reward = (reward_constraint + centerline_maintenance_reward + 
+        reward = float(reward_constraint + centerline_maintenance_reward + 
                     yaw_maintenance_reward + track_completion_reward + progress_reward + control_cost)
 
         return obs, reward, done, info
@@ -455,6 +455,7 @@ class BaseSingleEnv(BaseEnv):
                 constraints: Dict = step_info['constraints']
                 for k, v in constraints.items():
                     print(f"{k}: {v[0, 1]:.1e}")
+                print(f"Episode_reward: {episode_reward}")
                 print("-----------------------------------------------------------")
             
             if should_animate:
@@ -509,7 +510,7 @@ class BaseSingleEnv(BaseEnv):
             L.log('eval/' + prefix + 'mean_episode_reward', mean_ep_reward, step)
             L.log('eval/' + prefix + 'best_episode_reward', best_ep_reward, step)
 
-        run_eval_loop(sample_stochastically=True)
+        run_eval_loop(sample_stochastically=False)
         L.dump(step)
 
         self.reset_rej_sampling = reset_rejection_sampling_old
