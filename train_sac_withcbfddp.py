@@ -44,7 +44,7 @@ def parse_args():
     parser.add_argument('--agent', default='curl_sac', type=str)
     parser.add_argument('--init_steps', default=1000, type=int)
     parser.add_argument('--num_train_steps', default=600000, type=int)
-    parser.add_argument('--batch_size', default=256, type=int)
+    parser.add_argument('--batch_size', default=1024, type=int)
     parser.add_argument('--hidden_dim', default=512, type=int)
     # eval
     parser.add_argument('--eval_freq', default=150, type=int)
@@ -52,7 +52,7 @@ def parse_args():
     # critic
     parser.add_argument('--critic_lr', default=5e-5, type=float)
     parser.add_argument('--critic_beta', default=0.9, type=float)
-    parser.add_argument('--critic_tau', default=0.005, type=float) # try 0.05 or 0.1
+    parser.add_argument('--critic_tau', default=0.001, type=float) # try 0.05 or 0.1
     parser.add_argument('--critic_target_update_freq', default=2, type=int) # try to change it to 1 and retain 0.01 above
     # actor
     parser.add_argument('--actor_lr', default=5e-5, type=float)
@@ -72,7 +72,7 @@ def parse_args():
     # sac
     parser.add_argument('--discount', default=0.99, type=float)
     parser.add_argument('--init_temperature', default=0.1, type=float)
-    parser.add_argument('--alpha_lr', default=1e-5, type=float)
+    parser.add_argument('--alpha_lr', default=1e-6, type=float)
     parser.add_argument('--alpha_beta', default=0.5, type=float)
     # misc
     parser.add_argument('--seed', default=12, type=int)
