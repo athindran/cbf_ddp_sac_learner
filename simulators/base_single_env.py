@@ -115,7 +115,7 @@ class BaseSingleEnv(BaseEnv):
         constraint_values = np.empty((1,))
         for key, constraint_value in constraints.items():
             constraint_values = np.concatenate((constraint_values, constraint_value.ravel()))
-        reward_constraint = min(np.min(constraint_values, axis=0), 0.0)
+        reward_constraint = -20.0 if np.min(constraint_values, axis=0) <= 0.0 else 0.0
 
         centerline_maintenance_reward = -0.01*np.abs(obs[1])
         yaw_maintenance_reward = 0.0 if np.abs(obs[3])<1.0 else -0.5
