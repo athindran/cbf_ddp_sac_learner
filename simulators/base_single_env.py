@@ -121,7 +121,7 @@ class BaseSingleEnv(BaseEnv):
         yaw_maintenance_reward = 0.0 if np.abs(obs[3])<1.0 else -0.2
         track_completion_reward = 150.0 if (state_nxt[0]>=self.track_len and done) else 0
         control_cost = -0.001 * action[0]**2 - 0.001 * action[1]**2
-        progress_cost = max(0.01*obs[0], 0.15)
+        progress_cost = max(0.01*obs[0], 0.1)
 
         reward = float(reward_constraint + centerline_maintenance_reward + progress_cost +
                     yaw_maintenance_reward + track_completion_reward + control_cost)
