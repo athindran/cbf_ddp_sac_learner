@@ -82,8 +82,11 @@ class Actor(nn.Module):
 
         self.trunk = nn.Sequential(
             nn.Linear(obs_shape[0], hidden_dim), nn.ReLU(),
+            nn.LayerNorm(hidden_dim),
             nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
+            nn.LayerNorm(hidden_dim),
             nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
+            nn.LayerNorm(hidden_dim),
             nn.Linear(hidden_dim, 2 * action_shape[0])
         )
 
@@ -138,8 +141,11 @@ class QFunction(nn.Module):
         super().__init__()
         self.trunk = nn.Sequential(
             nn.Linear(obs_dim + action_dim, hidden_dim), nn.ReLU(),
+            nn.LayerNorm(hidden_dim),
             nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
+            nn.LayerNorm(hidden_dim),
             nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
+            nn.LayerNorm(hidden_dim),
             nn.Linear(hidden_dim, 2 * action_dim)
         )
 

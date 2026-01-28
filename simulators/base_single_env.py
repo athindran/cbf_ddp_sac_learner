@@ -115,16 +115,16 @@ class BaseSingleEnv(BaseEnv):
         constraint_values = np.empty((1,))
         for key, constraint_value in constraints.items():
             constraint_values = np.concatenate((constraint_values, constraint_value.ravel()))
-        reward_constraint = -20.0 if np.min(constraint_values, axis=0) <= 0.0 else 0.0
+        reward_constraint = -250.0 if np.min(constraint_values, axis=0) <= 0.0 else 0.0
 
-        centerline_maintenance_reward = -0.01*np.abs(obs[1])
-        yaw_maintenance_reward = 0.0 if np.abs(obs[3])<1.0 else -0.5
-        track_completion_reward = 10.0 if obs[0]>=0.95*self.track_len else 0
-        progress_reward = 0.01*(obs[0] - self.track_len)
-        control_cost = -0.05 * action[0]**2 - 0.05 * action[1]**2
+        centerline_maintenance_reward = -0.05*np.abs(obs[1])
+        yaw_maintenance_reward = 0.0 if np.abs(obs[3])<1.0 else -0.2
+        track_completion_reward = 150.0 if (state_nxt[0]>=self.track_len and done) else 0
+        control_cost = -0.001 * action[0]**2 - 0.001 * action[1]**2
+        progress_cost = max(0.01*obs[0], 0.15)
 
-        reward = float(reward_constraint + centerline_maintenance_reward + 
-                    yaw_maintenance_reward + track_completion_reward + progress_reward + control_cost)
+        reward = float(reward_constraint + centerline_maintenance_reward + progress_cost +
+                    yaw_maintenance_reward + track_completion_reward + control_cost)
 
         return obs, reward, done, info
 
