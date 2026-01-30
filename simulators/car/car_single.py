@@ -148,11 +148,11 @@ class CarSingleEnv(BaseSingleEnv):
         if self.track_len is not None:
             if state[0] > self.track_len:
                 done = True
-                done_type = "leave_track with no failure"
+                done_type = "leave_track_with_no_failure"
 
         if state[2] <= self.min_velocity:
             done = True
-            done_type = "safe stop"
+            done_type = "safe_stop"
 
         # Retrieves constraints / traget values.
         constraint_values = None

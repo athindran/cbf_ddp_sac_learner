@@ -115,16 +115,17 @@ class BaseSingleEnv(BaseEnv):
         constraint_values = np.empty((1,))
         for key, constraint_value in constraints.items():
             constraint_values = np.concatenate((constraint_values, constraint_value.ravel()))
-        reward_constraint = -250.0 if np.min(constraint_values, axis=0) <= 0.0 else 0.0
 
-        centerline_maintenance_reward = -0.05*np.abs(obs[1])
-        yaw_maintenance_reward = 0.0 if np.abs(obs[3])<1.0 else -0.2
-        track_completion_reward = 150.0 if (state_nxt[0]>=self.track_len and done) else 0
-        control_cost = -0.001 * action[0]**2 - 0.001 * action[1]**2
-        progress_cost = max(0.01*obs[0], 0.1)
+        # centerline_maintenance_reward = -0.05*np.abs(obs[1])
+        # yaw_maintenance_reward = 0.0 if np.abs(obs[3])<1.0 else -0.2
+        # control_cost = -0.001 * action[0]**2 - 0.001 * action[1]**2
+        # progress_cost = min(max(0.01*obs[0], 0.2), -0.1)
+        reward_constraint = -50.0 if (done and info['done_type'] == "failure") else 0.0
+        track_completion_reward = 50.0 if (done and info['done_type'] == "leave_track_with_no_failure") else 0.0
+        safe_stop_reward = -20.0 if (done and info['done_type'] == "safe_stop") else 0.0
+        timeout_reward = -5.0 if (done and info['done_type'] == "timeout") else 0.0
 
-        reward = float(reward_constraint + centerline_maintenance_reward + progress_cost +
-                    yaw_maintenance_reward + track_completion_reward + control_cost)
+        reward = float(reward_constraint + track_completion_reward + timeout_reward + safe_stop_reward)
 
         return obs, reward, done, info
 
