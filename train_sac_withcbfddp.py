@@ -39,23 +39,23 @@ from learned_policies import(SacAgent,
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--replay_buffer_capacity', default=3000000, type=int)
+    parser.add_argument('--replay_buffer_capacity', default=2000000, type=int)
     # train
     parser.add_argument('--agent', default='curl_sac', type=str)
     parser.add_argument('--init_steps', default=1000, type=int)
-    parser.add_argument('--num_train_steps', default=400000, type=int)
+    parser.add_argument('--num_train_steps', default=230000, type=int)
     parser.add_argument('--batch_size', default=256, type=int)
-    parser.add_argument('--hidden_dim', default=324, type=int)
+    parser.add_argument('--hidden_dim', default=256, type=int)
     # eval
     parser.add_argument('--eval_freq', default=100, type=int)
     parser.add_argument('--num_eval_episodes', default=40, type=int)
     # critic
-    parser.add_argument('--critic_lr', default=1e-5, type=float)
+    parser.add_argument('--critic_lr', default=5e-5, type=float)
     parser.add_argument('--critic_beta', default=0.9, type=float)
-    parser.add_argument('--critic_tau', default=0.005, type=float) # try 0.05 or 0.1
+    parser.add_argument('--critic_tau', default=0.01, type=float) # try 0.05 or 0.1
     parser.add_argument('--critic_target_update_freq', default=2, type=int) # try to change it to 1 and retain 0.01 above
     # actor
-    parser.add_argument('--actor_lr', default=1e-5, type=float)
+    parser.add_argument('--actor_lr', default=5e-5, type=float)
     parser.add_argument('--actor_beta', default=0.9, type=float)
     parser.add_argument('--actor_log_std_min', default=-10, type=float)
     parser.add_argument('--actor_log_std_max', default=2, type=float)
@@ -75,8 +75,8 @@ def parse_args():
     parser.add_argument('--alpha_lr', default=1e-5, type=float)
     parser.add_argument('--alpha_beta', default=0.5, type=float)
     # misc
-    parser.add_argument('--seed', default=123, type=int)
-    parser.add_argument('--work_dir', default='/Users/athindranrameshkumar/Documents/Code/cbf_ddp_softmax/model_store', type=str)
+    parser.add_argument('--seed', default=12, type=int)
+    parser.add_argument('--work_dir', default='/Users/athindranrameshkumar/Documents/Code/cbf_ddp_sac_learner/model_store', type=str)
     parser.add_argument('--load_dir', default='None', type=str)
     parser.add_argument('--load_index', default=0, type=str)
     parser.add_argument('--save_tb', default=False, action='store_true')
@@ -138,7 +138,6 @@ def make_sac_agent(obs_shape, action_shape, args, device):
         critic_tau=args.critic_tau,
         critic_target_update_freq=args.critic_target_update_freq,
         log_interval=args.log_interval,
-        limit = args.actor_limit,
     )
 
 
@@ -275,11 +274,16 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, line_search, sto
         device=device
     )
 
+    # Load model
+    # sac_agent.load(model_dir='/Users/athindranrameshkumar/Documents/Code/cbf_ddp_sac_learner/model_store/racecar_safety-debug01-26-1769489934/model/',
+    #                step=279304)
+
     L = Logger(args.work_dir, use_tb=args.save_tb)
 
     animate_dir = os.path.join(args.work_dir, 'animate')
 
-    env.train_sac_agent(sac_agent, replay_buffer, L, args, max_episode_length=max_iter_receding, verbose=False)
+    env.train_sac_agent(sac_agent, replay_buffer, L, args, max_episode_length=max_iter_receding,  config_solver=config_solver, verbose=False)
+    #env.evaluate_sac_agent(sac_agent, 40, L, 0, args)
 
     obs_history, action_history, reward_history, done_history = env.simulate_trajectory_with_sac_agent(
          T_rollout=max_iter_receding, end_criterion='failure', sac_agent=sac_agent, verbose=True, num_trajs=10,

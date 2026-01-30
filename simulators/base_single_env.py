@@ -115,16 +115,17 @@ class BaseSingleEnv(BaseEnv):
         constraint_values = np.empty((1,))
         for key, constraint_value in constraints.items():
             constraint_values = np.concatenate((constraint_values, constraint_value.ravel()))
-        reward_constraint = np.min(constraint_values, axis=0)
 
-        centerline_maintenance_reward = -0.05*np.abs(obs[1])
-        yaw_maintenance_reward = 0.0 if np.abs(obs[3])<1.0 else -10
-        track_completion_reward = 500.0 if obs[0]>=0.99*self.track_len else 0
-        progress_reward = 0.05*(obs[0] - self.track_len)
-        control_cost = -0.01 * action[0]**2 - 0.01 * action[1]**2
+        # centerline_maintenance_reward = -0.05*np.abs(obs[1])
+        # yaw_maintenance_reward = 0.0 if np.abs(obs[3])<1.0 else -0.2
+        # control_cost = -0.001 * action[0]**2 - 0.001 * action[1]**2
+        # progress_cost = min(max(0.01*obs[0], 0.2), -0.1)
+        reward_constraint = -50.0 if (done and info['done_type'] == "failure") else 0.0
+        track_completion_reward = 50.0 if (done and info['done_type'] == "leave_track_with_no_failure") else 0.0
+        safe_stop_reward = -20.0 if (done and info['done_type'] == "safe_stop") else 0.0
+        timeout_reward = -5.0 if (done and info['done_type'] == "timeout") else 0.0
 
-        reward = (reward_constraint + centerline_maintenance_reward + 
-                    yaw_maintenance_reward + track_completion_reward + progress_reward + control_cost)
+        reward = float(reward_constraint + track_completion_reward + timeout_reward + safe_stop_reward)
 
         return obs, reward, done, info
 
@@ -404,7 +405,7 @@ class BaseSingleEnv(BaseEnv):
             reward_history = []
             done_history = []
             train_step = 0
-            animate_dir_curr = animate_dir + '_' + str(traj_indx)
+            animate_dir_curr = os.path.join(animate_dir, f'traj_{traj_indx}')
             os.makedirs(animate_dir_curr, exist_ok=True)
             animate_prog_dir = os.path.join(animate_dir_curr, 'images')
             os.makedirs(animate_prog_dir, exist_ok=True)
@@ -455,6 +456,7 @@ class BaseSingleEnv(BaseEnv):
                 constraints: Dict = step_info['constraints']
                 for k, v in constraints.items():
                     print(f"{k}: {v[0, 1]:.1e}")
+                print(f"Episode_reward: {episode_reward}")
                 print("-----------------------------------------------------------")
             
             if should_animate:
@@ -509,17 +511,18 @@ class BaseSingleEnv(BaseEnv):
             L.log('eval/' + prefix + 'mean_episode_reward', mean_ep_reward, step)
             L.log('eval/' + prefix + 'best_episode_reward', best_ep_reward, step)
 
-        run_eval_loop(sample_stochastically=True)
+        run_eval_loop(sample_stochastically=False)
         L.dump(step)
 
         self.reset_rej_sampling = reset_rejection_sampling_old
 
         return
 
-    def train_sac_agent(self, sac_agent, replay_buffer, L, args, max_episode_length, verbose=True):
+    def train_sac_agent(self, sac_agent, replay_buffer, L, args, max_episode_length, config_solver, verbose=True):
         episode, episode_reward, done = 0, 0, True
         reset_rejection_sampling_old = self.reset_rej_sampling
         self.reset_rej_sampling = False
+        animate_dir = make_dir(os.path.join(args.work_dir, 'animations'))
         model_dir = make_dir(os.path.join(args.work_dir, 'model'))
         buffer_dir = make_dir(os.path.join(args.work_dir, 'buffer'))
 
@@ -549,6 +552,12 @@ class BaseSingleEnv(BaseEnv):
                         for k, v in constraints.items():
                             print(f"{k}: {v[0, 1]:.1e}")
                         print("-----------------------------------------------------------")
+                    
+                    if episode % args.eval_freq == 0:
+                        _, _, _, _ = self.simulate_trajectory_with_sac_agent(
+                            T_rollout=max_episode_length, end_criterion='failure', sac_agent=sac_agent, verbose=verbose, num_trajs=2,
+                                sample_stochastically=False, should_animate=True, animate_dir=animate_dir + '_' + str(train_step), config_solver=config_solver,
+                            )
 
                     start_time = time.time()
                 #if train_step % args.log_interval == 0:

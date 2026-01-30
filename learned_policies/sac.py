@@ -16,16 +16,15 @@ def gaussian_logprob(noise, log_std):
     return residual - 0.5 * np.log(2 * np.pi) * noise.size(-1)
 
 
-def squash(mu, pi, log_pi, limit):
+def squash(mu, pi, log_pi):
     """Apply squashing function.
     See appendix C from https://arxiv.org/pdf/1812.05905.pdf.
     """
-    mu = limit*torch.tanh(mu)
+    mu = torch.tanh(mu)
     if pi is not None:
-        scaledpi = torch.tanh(pi)
-        pi = limit*scaledpi
+        pi = torch.tanh(pi)
     if log_pi is not None:
-        log_pi -= torch.log(F.relu(limit*(1 - scaledpi**2)) + 1e-6).sum(-1, keepdim=True)
+        log_pi -= torch.log(F.relu(1 - pi.pow(2)) + 1e-6).sum(-1, keepdim=True)
     return mu, pi, log_pi
 
 
@@ -43,48 +42,22 @@ def weight_init(m):
         gain = nn.init.calculate_gain('relu')
         nn.init.orthogonal_(m.weight.data[:, :, mid, mid], gain)
 
-class DenseResidualBlock(nn.Module):
-    def __init__(self, input_dim, hidden_dim, out_dim, dropout_rate=0.1):
-        super(DenseResidualBlock, self).__init__()
-        self.linear1 = nn.Linear(input_dim, hidden_dim)
-        self.bn1 = nn.BatchNorm1d(hidden_dim)
-        self.tanh = nn.Tanh()
-        
-        self.linear2 = nn.Linear(hidden_dim, hidden_dim)
-        self.bn2 = nn.BatchNorm1d(hidden_dim)
-        self.dropout = nn.Dropout(dropout_rate)
-
-        self.linear3 = nn.Linear(hidden_dim, hidden_dim)
-        self.linear4 = nn.Linear(hidden_dim, out_dim)
-
-    def forward(self, x):        
-        out = self.linear1(x)
-        out = self.bn1(out)
-        out = self.tanh(out)
-        out = self.linear2(out)
-        out = self.bn2(out)
-        out = self.tanh(out)        
-        out = self.dropout(out)
-        out = self.linear3(out)
-        out = self.tanh(out)
-        out = self.linear4(out)
-
-        return out
-
-
 class Actor(nn.Module):
     """MLP actor network."""
     def __init__(
-        self, obs_shape, action_shape, hidden_dim, log_std_min, log_std_max, limit=1.0
+        self, obs_shape, action_shape, hidden_dim, log_std_min, log_std_max
     ):
         super().__init__()
-        self.limit = limit
         self.log_std_min = log_std_min
         self.log_std_max = log_std_max
 
-        # Dense residual net for exploration.
-        self.trunk = DenseResidualBlock(input_dim=obs_shape[0], hidden_dim=hidden_dim, 
-                                        dropout_rate=0.1, out_dim=2 * action_shape[0])
+        self.trunk = nn.Sequential(
+            nn.Linear(obs_shape[0], hidden_dim), nn.ReLU(),
+            nn.LayerNorm(hidden_dim),
+            nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
+            nn.LayerNorm(hidden_dim),
+            nn.Linear(hidden_dim, 2 * action_shape[0])
+        )
 
         self.outputs = dict()
         self.apply(weight_init)
@@ -115,7 +88,7 @@ class Actor(nn.Module):
         else:
             log_pi = None
 
-        mu, pi, log_pi = squash(mu, pi, log_pi, self.limit)
+        mu, pi, log_pi = squash(mu, pi, log_pi)
 
         return mu, pi, log_pi, log_std
 
@@ -135,8 +108,13 @@ class QFunction(nn.Module):
     """MLP for q-function."""
     def __init__(self, obs_dim, action_dim, hidden_dim):
         super().__init__()
-        self.trunk = DenseResidualBlock(input_dim=obs_dim + action_dim, hidden_dim=hidden_dim, 
-                                        dropout_rate=0.1, out_dim=1)
+        self.trunk = nn.Sequential(
+            nn.Linear(obs_dim + action_dim, hidden_dim), nn.ReLU(),
+            nn.LayerNorm(hidden_dim),
+            nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
+            nn.LayerNorm(hidden_dim),
+            nn.Linear(hidden_dim, 2 * action_dim)
+        )
 
     def forward(self, obs, action):
         assert obs.size(0) == action.size(0)
@@ -206,7 +184,6 @@ class SacAgent(object):
         critic_tau=0.005,
         critic_target_update_freq=2,
         log_interval=100,
-        limit=1.0,
     ):
         """
         Training agent using SAC algorithm.
@@ -219,7 +196,7 @@ class SacAgent(object):
         self.log_interval = log_interval
         
         self.actor = Actor(
-            obs_shape, action_shape, hidden_dim, actor_log_std_min, actor_log_std_max, limit
+            obs_shape, action_shape, hidden_dim, actor_log_std_min, actor_log_std_max,
         ).to(device)
 
         self.critic = Critic(
@@ -237,7 +214,7 @@ class SacAgent(object):
         self.log_alpha = torch.tensor(np.log(init_temperature)).to(device)
         self.log_alpha.requires_grad = True
         # set target entropy to -|A|
-        self.target_entropy = -np.prod(action_shape)
+        self.target_entropy = -np.prod(action_shape).astype(float)
         
         # optimizers
         self.actor_optimizer = torch.optim.Adam(
@@ -252,7 +229,6 @@ class SacAgent(object):
             [self.log_alpha], lr=alpha_lr, betas=(alpha_beta, 0.999)
         )
 
-        self.cross_entropy_loss = nn.CrossEntropyLoss()
 
         self.train()
         self.critic_target.train()
@@ -266,9 +242,9 @@ class SacAgent(object):
     def alpha(self):
         return self.log_alpha.exp()
 
-    def select_action(self, obs, ctxobs=None):
+    def select_action(self, obs):
         with torch.no_grad():
-            obs = torch.FloatTensor(np.array(obs)).to(self.device)
+            obs = torch.FloatTensor(obs.copy()).to(self.device)
             obs = obs.unsqueeze(0)
 
             mu, _, _, _ = self.actor(
@@ -276,9 +252,9 @@ class SacAgent(object):
             )
             return mu.cpu().data.numpy().flatten()
 
-    def sample_action(self, obs, ctxobs=None):
+    def sample_action(self, obs):
         with torch.no_grad():
-            obs = torch.FloatTensor(np.array(obs)).to(self.device)
+            obs = torch.FloatTensor(obs.copy()).to(self.device)
             obs = obs.unsqueeze(0)
   
             mu, pi, _, _ = self.actor(obs, compute_pi=True, compute_log_pi=False)
@@ -305,6 +281,7 @@ class SacAgent(object):
         # Optimize the critic
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
+        # torch.nn.utils.clip_grad_norm_(self.critic.parameters(), max_norm=1.0)
         self.critic_optimizer.step()
 
         self.critic.log(L, step)
@@ -327,6 +304,7 @@ class SacAgent(object):
         # optimize the actor
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
+        # torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=1.0)
         self.actor_optimizer.step()
 
         self.actor.log(L, step)
