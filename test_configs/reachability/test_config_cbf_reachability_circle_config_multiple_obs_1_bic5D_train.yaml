@@ -2,9 +2,9 @@ environment:
   SEED: 0
   NUM_AGENTS: 1
   # TRACK
-  TRACK_LEN: 18
+  TRACK_LEN: 13
   # LOOP: true
-  TIMEOUT: 1300
+  TIMEOUT: 1000
   # DONE FLAG PARAM
   END_CRITERION: failure
   G_X_FAIL: 0.0
@@ -40,7 +40,7 @@ cost:
   
   # Safety DDP parameters
   # Yaw constraint not compatible. Set to false.
-  USE_YAW: false
+  USE_YAW: true
   # Velocity constraint is not applicable to the current reach-avoid formulation.
   USE_VEL: false
   USE_DELTA: false
