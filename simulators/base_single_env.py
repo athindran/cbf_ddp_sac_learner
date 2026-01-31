@@ -121,9 +121,9 @@ class BaseSingleEnv(BaseEnv):
         # control_cost = -0.001 * action[0]**2 - 0.001 * action[1]**2
         # progress_cost = min(max(0.01*obs[0], 0.2), -0.1)
         reward_constraint = -50.0 if (done and info['done_type'] == "failure") else 0.0
-        track_completion_reward = 50.0 if (done and info['done_type'] == "leave_track_with_no_failure") else 0.0
+        track_completion_reward = (50.0 - self.cnt*self.agent.dyn.dt) if (done and info['done_type'] == "leave_track_with_no_failure") else 0.0
         safe_stop_reward = -20.0 if (done and info['done_type'] == "safe_stop") else 0.0
-        timeout_reward = -5.0 if (done and info['done_type'] == "timeout") else 0.0
+        timeout_reward = obs[0] if (done and info['done_type'] == "timeout") else 0.0
 
         reward = float(reward_constraint + track_completion_reward + timeout_reward + safe_stop_reward)
 
@@ -404,7 +404,7 @@ class BaseSingleEnv(BaseEnv):
             action_history = []
             reward_history = []
             done_history = []
-            train_step = 0
+            sim_step = 0
             animate_dir_curr = os.path.join(animate_dir, f'traj_{traj_indx}')
             os.makedirs(animate_dir_curr, exist_ok=True)
             animate_prog_dir = os.path.join(animate_dir_curr, 'images')
@@ -431,7 +431,7 @@ class BaseSingleEnv(BaseEnv):
 
                     fig.savefig(
                         os.path.join(animate_prog_dir,
-                            str(train_step) + ".png"), dpi=200, bbox_inches="tight"
+                            str(sim_step) + ".png"), dpi=200, bbox_inches="tight"
                     )
                     plt.close('all')
 
@@ -448,7 +448,7 @@ class BaseSingleEnv(BaseEnv):
                 action_history.append(action)
                 reward_history.append(reward)
                 done_history.append(done)
-                train_step += 1
+                sim_step += 1
 
             if verbose:
                 print(f"--------------------RESULT----------------------")
@@ -464,7 +464,7 @@ class BaseSingleEnv(BaseEnv):
                 gif_path = os.path.join(animate_dir_curr, 'rollout.gif')
                 frame_skip = 5
                 with imageio.get_writer(gif_path, mode='I') as writer:
-                    for i in range(train_step - 1):
+                    for i in range(sim_step - 1):
                         if frame_skip != 1 and (i + 1) % frame_skip != 0:
                             continue
                         filename = os.path.join(
@@ -474,6 +474,7 @@ class BaseSingleEnv(BaseEnv):
                         #Image(open(gif_path, 'rb').read(), width=400)
                 # endregion
 
+        self.reset()
         self.reset_rej_sampling = reset_rejection_sampling_old
 
         return obs_history, action_history, reward_history, done_history
@@ -513,7 +514,7 @@ class BaseSingleEnv(BaseEnv):
 
         run_eval_loop(sample_stochastically=False)
         L.dump(step)
-
+        self.reset()
         self.reset_rej_sampling = reset_rejection_sampling_old
 
         return

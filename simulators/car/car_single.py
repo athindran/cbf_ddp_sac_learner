@@ -360,18 +360,18 @@ class CarSingleEnv(BaseSingleEnv):
                 dimensions = vertices[2:4]
                 obs_rect = plt.Rectangle(
                     [vertices[0] - vertices[3], vertices[1] - vertices[4]], 2*vertices[3], 
-                        2*vertices[4], angle = np.rad2deg(vertices[2]), rotation_point='center', alpha=1.0, facecolor=None, edgecolor=c, fill=False)
+                        2*vertices[4], angle = np.rad2deg(vertices[2]), rotation_point='center', alpha=1.0, facecolor=None, edgecolor=c, fill=False, linewidth=1.0)
                 ax.add_patch(obs_rect)
         elif self.cost.constraint.obsc_type == 'circle':
             for vertices in self.obs_vertices_list:
                 obs_circle = plt.Circle(
-                    [vertices[0], vertices[1]], vertices[2], alpha=1.0, facecolor=None, edgecolor=c, fill=False)
+                    [vertices[0], vertices[1]], vertices[2], alpha=1.0, facecolor=None, edgecolor=c, fill=False, linewidth=1.0)
                 ax.add_patch(obs_circle)
         elif self.cost.constraint.obsc_type == 'ellipse':
             for vertices in self.obs_vertices_list:
                 obs_ellipse = Ellipse(
                     [vertices[0], vertices[1]], 2*vertices[3], 2*vertices[4], 
-                        angle = np.rad2deg(vertices[2]), alpha=1.0, facecolor=None, edgecolor=c, fill=False)
+                        angle = np.rad2deg(vertices[2]), alpha=1.0, facecolor=None, edgecolor=c, fill=False, linewidth=1.0)
                 ax.add_patch(obs_ellipse)
 
     def render_state_cost_map(
