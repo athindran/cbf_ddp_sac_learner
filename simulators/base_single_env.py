@@ -31,12 +31,12 @@ class BaseSingleEnv(BaseEnv):
         self.env_type = "single-agent"
 
         # Action Space.
-        action_space = np.array(config_agent.ACTION_RANGE, dtype=np.float32)
-        self.action_dim = action_space.shape[0]
-        self.action_dim_ctrl = action_space.shape[0]
-        self.agent = Agent(config_agent, action_space)
+        self.action_space_range = np.array(config_agent.ACTION_RANGE, dtype=np.float32)
+        self.action_dim = self.action_space_range.shape[0]
+        self.action_dim_ctrl = self.action_space_range.shape[0]
+        self.agent = Agent(config_agent, self.action_space_range)
         self.action_space = spaces.Box(
-            low=action_space[:, 0], high=action_space[:, 1]
+            low=self.action_space_range[:, 0], high=self.action_space_range[:, 1]
         )
         self.state_dim = self.agent.dyn.dim_x
 
@@ -411,27 +411,54 @@ class BaseSingleEnv(BaseEnv):
             os.makedirs(animate_prog_dir, exist_ok=True)
             
             while not done:
-                if should_animate:
-                    fig = plt.figure()
-                    ax = plt.gca()
-
-                    ax.axis(self.visual_extent)
-                    ax.set_aspect('equal')
+                if should_animate and sim_step>0: 
+                    fig, axes = plt.subplots(
+                        3, 1, figsize=(8, 8)
+                    )
+                    axes[0].axis(self.visual_extent)
+                    axes[0].set_aspect('equal')
 
                     c_obs = 'k'
                     c_ego = 'c'
                     c_trace = 'k'
 
                     # track, obstacles, footprint
-                    self.render_obs(ax=ax, c=c_obs)  
-                    self.render_footprint(ax=ax, obs=obs, c=c_ego, lw=0.5)
+                    self.render_obs(ax=axes[0], c=c_obs)  
+                    self.render_footprint(ax=axes[0], obs=obs, c=c_ego, lw=0.5)
                     obs_history_numpy = np.array(obs_history)
                     if obs_history_numpy.size > 0:
-                        sc = ax.scatter(obs_history_numpy[:, 0], obs_history_numpy[:, 1], s=3, c=c_trace, marker='o')
+                        sc = axes[0].scatter(obs_history_numpy[:, 0], obs_history_numpy[:, 1], s=3, c=c_trace, marker='o')
+
+                    action_history_np = np.array(action_history)
+                    axes[1].plot(action_history_np[:, 0], 'k', alpha = 1.0, linewidth=1.0)
+                    axes[1].set_xlim([0, config_solver.MAX_ITER_RECEDING])
+                    axes[1].set_ylim([self.action_space_range[0, 0], self.action_space_range[0, 1]])
+                    nsteps = action_history_np.shape[0]
+                    
+                    axes[1].set_xticks(ticks=[], labels=[], fontsize=10)
+                    axes[1].set_yticks(ticks=[self.action_space_range[0, 0], self.action_space_range[0, 1]], 
+                                        labels=[self.action_space_range[0, 0], self.action_space_range[0, 1]], 
+                                        fontsize=10)
+                    # axes[1].set_xlabel('Time step', fontsize=10)
+                    axes[1].set_ylabel('Accel control', fontsize=10)
+                    axes[1].yaxis.set_label_coords(-0.04, 0.5)
+                    axes[1].xaxis.set_label_coords(0.5, -0.04)
+
+                    axes[2].plot(action_history_np[:, 1], 'k', alpha = 1.0, linewidth=1.0)
+                    axes[2].set_xlim([0, config_solver.MAX_ITER_RECEDING])
+                    axes[2].set_ylim([self.action_space_range[1, 0], self.action_space_range[1, 1]])
+                    axes[2].set_xticks(ticks=[0, round(nsteps, 2)], labels=[0, round(nsteps, 2)], fontsize=10)
+                    axes[2].set_yticks(ticks=[self.action_space_range[1, 0], self.action_space_range[1, 1]], 
+                                        labels=[self.action_space_range[1, 0], self.action_space_range[1, 1]], 
+                                        fontsize=10)
+                    #axes[2].set_xlabel('Time step', fontsize=10)
+                    axes[2].set_ylabel('Steer control', fontsize=10)
+                    axes[2].yaxis.set_label_coords(-0.04, 0.5)
+                    axes[2].xaxis.set_label_coords(0.5, -0.04)
 
                     fig.savefig(
                         os.path.join(animate_prog_dir,
-                            str(sim_step) + ".png"), dpi=200, bbox_inches="tight"
+                            str(sim_step - 1) + ".png"), dpi=400, bbox_inches="tight"
                     )
                     plt.close('all')
 
@@ -465,10 +492,10 @@ class BaseSingleEnv(BaseEnv):
                 frame_skip = 5
                 with imageio.get_writer(gif_path, mode='I') as writer:
                     for i in range(sim_step - 1):
-                        if frame_skip != 1 and (i + 1) % frame_skip != 0:
+                        if frame_skip != 1 and i % frame_skip != 0:
                             continue
                         filename = os.path.join(
-                            animate_prog_dir, str(i + 1) + ".png")
+                            animate_prog_dir, str(i) + ".png")
                         image = imageio.imread(filename)
                         writer.append_data(image)
                         #Image(open(gif_path, 'rb').read(), width=400)
