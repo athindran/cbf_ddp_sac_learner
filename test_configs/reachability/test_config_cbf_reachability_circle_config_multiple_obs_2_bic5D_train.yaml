@@ -10,17 +10,17 @@ environment:
   G_X_FAIL: 0.0
   OBSC_TYPE: circle
   OBS_SPEC:
-    - [6.0, 2.0, 0.5]
-    - [6.0, -2.2, 0.6]
-    - [9.0, 0.0, 0.45]
+    - [6.0, 1.8, 0.5]
+    - [6.0, -1.8, 0.6]
+    - [12.0, 0.0, 0.5]
   RESET_SPACE:
     - [0., 1.0]
-    - [-2.5, 2.5]
+    - [-2.0, 2.0]
     - [1.5, 2.5]
     - [-0.3, 0.3]
     - [-0.3, 0.3]
   RESET_REJ_SAMPLING: false
-  tag: 'mul_obs_reachability_config1_bic5d_train'
+  tag: 'mul_obs_reachability_config1_bic5d_train_2'
 
 cost:
   # Task policy tuned weights

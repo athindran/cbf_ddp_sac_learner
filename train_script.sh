@@ -1,4 +1,8 @@
-python train_sac_withcbfddp.py -cf ./test_configs/reachability/test_config_cbf_reachability_circle_config_multiple_obs_1_bic5D_train.yaml -rb 3.0 -ls 'baseline' --seed 12
-python train_sac_withcbfddp.py -cf ./test_configs/reachability/test_config_cbf_reachability_circle_config_multiple_obs_1_bic5D_train.yaml -rb 3.0 -ls 'baseline' --seed 23
-python train_sac_withcbfddp.py -cf ./test_configs/reachability/test_config_cbf_reachability_circle_config_multiple_obs_1_bic5D_train.yaml -rb 3.0 -ls 'baseline' --seed 34
-python train_sac_withcbfddp.py -cf ./test_configs/reachability/test_config_cbf_reachability_circle_config_multiple_obs_1_bic5D_train.yaml -rb 3.0 -ls 'baseline' --seed 45
+# python train_sac_withcbfddp.py -cf ./test_configs/reachability/test_config_cbf_reachability_circle_config_multiple_obs_1_bic5D_train.yaml -rb 3.0 -ls 'baseline' --seed 12 --hidden_dim 256 --num_train_steps 450000
+# python train_sac_withcbfddp.py -cf ./test_configs/reachability/test_config_cbf_reachability_circle_config_multiple_obs_1_bic5D_train.yaml -rb 3.0 -ls 'baseline' --seed 23 --hidden_dim 256 --num_train_steps 450000
+# python train_sac_withcbfddp.py -cf ./test_configs/reachability/test_config_cbf_reachability_circle_config_multiple_obs_1_bic5D_train.yaml -rb 3.0 -ls 'baseline' --seed 34 --hidden_dim 256 --num_train_steps 450000
+# python train_sac_withcbfddp.py -cf ./test_configs/reachability/test_config_cbf_reachability_circle_config_multiple_obs_1_bic5D_train.yaml -rb 3.0 -ls 'baseline' --seed 45 --hidden_dim 256 --num_train_steps 450000
+python train_sac_withcbfddp.py -cf ./test_configs/reachability/test_config_cbf_reachability_circle_config_multiple_obs_2_bic5D_train.yaml -rb 3.0 -ls 'baseline' --seed 122 --hidden_dim 256 --num_train_steps 600000
+python train_sac_withcbfddp.py -cf ./test_configs/reachability/test_config_cbf_reachability_circle_config_multiple_obs_2_bic5D_train.yaml -rb 3.0 -ls 'baseline' --seed 222 --hidden_dim 256 --num_train_steps 600000
+python train_sac_withcbfddp.py -cf ./test_configs/reachability/test_config_cbf_reachability_circle_config_multiple_obs_2_bic5D_train.yaml -rb 3.0 -ls 'baseline' --seed 242 --hidden_dim 256 --num_train_steps 600000
+python train_sac_withcbfddp.py -cf ./test_configs/reachability/test_config_cbf_reachability_circle_config_multiple_obs_2_bic5D_train.yaml -rb 3.0 -ls 'baseline' --seed 462 --hidden_dim 256 --num_train_steps 600000
