@@ -69,6 +69,7 @@ class Agent:
         self.agents_policy = {}
         self.agents_order = None
         self.is_task_ilqr = getattr(config, 'is_task_ilqr', False)
+        self.is_task_rl = getattr(config, 'is_task_rl', False)
         self.compute_evaluation_margin = True
         self.ticks = 357
 
@@ -168,6 +169,8 @@ class Agent:
             # Execute task control
             if self.is_task_ilqr:
                 task_ctrl, _ = self.task_policy.get_action(obs=obs, controls=None, state=kwargs['state'], warmup=warmup)
+            elif self.is_task_rl:
+                task_ctrl = self.task_policy.select_action(obs)
             elif self.dyn.id ==  "PVTOL6D":
                 task_ctrl = self.task_policy(obs, self.dyn)
             else:
@@ -187,7 +190,7 @@ class Agent:
 
     def init_policy(
         self, policy_type: str, config, cost: Optional[BaseMargin] = None, 
-        evaluation_cost: Optional[BaseMargin] = None,
+        evaluation_cost: Optional[BaseMargin] = None, rl_task_policy = None,
         **kwargs
     ):
         self.policy_type = policy_type
@@ -202,8 +205,10 @@ class Agent:
             self.policy = iLQRReachability(
                 self.id, config, self.dyn, cost
             )
-        elif policy_type == "iLQRSafetyFilter":            
-            if self.is_task_ilqr:
+        elif policy_type == "iLQRSafetyFilter":
+            if self.is_task_rl:
+                self.task_policy = rl_task_policy    
+            elif self.is_task_ilqr:
                 self.task_policy = iLQR(
                     self.id,
                     config,

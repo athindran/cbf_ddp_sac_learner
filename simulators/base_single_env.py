@@ -121,11 +121,12 @@ class BaseSingleEnv(BaseEnv):
         # control_cost = -0.001 * action[0]**2 - 0.001 * action[1]**2
         # progress_cost = min(max(0.01*obs[0], 0.2), -0.1)
         reward_constraint = -50.0 if (done and info['done_type'] == "failure") else 0.0
-        track_completion_reward = (50.0 - self.cnt*self.agent.dyn.dt) if (done and info['done_type'] == "leave_track_with_no_failure") else 0.0
+        track_completion_reward = 50.0 if (done and info['done_type'] == "leave_track_with_no_failure") else 0.0
         safe_stop_reward = -20.0 if (done and info['done_type'] == "safe_stop") else 0.0
         timeout_reward = obs[0] if (done and info['done_type'] == "timeout") else 0.0
+        velocity_maintenance_reward = -np.abs(obs[2] - 2.2)*0.005
 
-        reward = float(reward_constraint + track_completion_reward + timeout_reward + safe_stop_reward)
+        reward = float(reward_constraint + track_completion_reward + timeout_reward + safe_stop_reward + velocity_maintenance_reward)
 
         return obs, reward, done, info
 
@@ -242,6 +243,9 @@ class BaseSingleEnv(BaseEnv):
                 "reward_history": rewards for every step.
                 "step_history": information for every step.
         """
+        reset_rejection_sampling_old = self.reset_rej_sampling
+        self.reset_rej_sampling = False
+
         # Stores the environment attributes and sets to rollout settings.
         timeout_backup = self.timeout
         end_criterion_backup = self.end_criterion
@@ -267,7 +271,11 @@ class BaseSingleEnv(BaseEnv):
         controls_initialize = None
 
         result = 0
-        obs = self.reset(**reset_kwargs)
+        if reset_kwargs is not None:
+            obs = self.reset(**reset_kwargs)
+        else:
+            obs = self.reset()
+
         state_history.append(self.state)
         obs_history.append(obs)
 
@@ -290,7 +298,7 @@ class BaseSingleEnv(BaseEnv):
 
             # Applies action: `done` and `info` are evaluated at the next
             # state.
-            obs, reward, done, step_info = self.step(action)
+            obs, reward, done, step_info = self.step_with_sac_agent(np.array(action))
 
             # Executes step callback and stores historyory.
             state_history.append(self.state)
@@ -381,6 +389,9 @@ class BaseSingleEnv(BaseEnv):
             plan_history=plan_history, reward_history=np.array(reward_history),
             step_history=step_history
         )
+        self.agent.safety_policy.reset_metadata()
+
+        self.reset_rej_sampling = reset_rejection_sampling_old
 
         return np.array(state_history), result, info
 
