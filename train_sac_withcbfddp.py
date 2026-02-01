@@ -141,7 +141,99 @@ def make_sac_agent(obs_shape, action_shape, args, device):
     )
 
 
-def main(config_file, road_boundary, filter_type, is_task_ilqr, line_search, stopping_computation='rollout'):
+def main(config_file, road_boundary, filter_type, is_task_ilqr, is_task_rl, 
+            line_search, stopping_computation='rollout'):
+    # Callback after each timestep for plotting and summarizing evaluation
+    def rollout_step_callback(
+            env: CarSingleEnv,
+            state_history,
+            obs_history,
+            action_history,
+            plan_history,
+            step_history,
+            *args,
+            **kwargs):
+        solver_info = plan_history[-1]
+        states = np.asarray(state_history).T  # last one is the next state.
+        action_history = np.asarray(action_history)
+        make_animation_plots(
+            env,
+            obs_history,
+            action_history,
+            solver_info,
+            kwargs['safety_plan'],
+            config_solver,
+            config_agent,
+            np.asarray(kwargs['barrier_filter_indices']),
+            np.asarray(kwargs['complete_filter_indices']),
+            fig_prog_folder)
+
+        if config_solver.FILTER_TYPE == "none":
+            print(
+                "[{}]: solver returns status {}, cost {:.1e}, and uses {:.3f}.".format(
+                    states.shape[1] - 1,
+                    solver_info['status'],
+                    solver_info['Vopt'],
+                    solver_info['t_process']),
+                end=' -> ')
+        else:
+            print(
+                "[{}]: solver returns status {}, Vopt {:.1e}, future Vopt {:.1e}, marginopt {:.1e}, future marginopt {:.1e}, and uses {:.3f}.".format(
+                    states.shape[1] - 1,
+                    solver_info['status'],
+                    solver_info['Vopt'],
+                    solver_info['Vopt_next'],
+                    solver_info['marginopt'],
+                    solver_info['marginopt_next'],
+                    solver_info['process_time']))
+            # Turn off QCQP solver if it stalls.
+            #assert solver_info['process_time']<0.09
+    
+    # Callback after episode for plotting and summarizing evaluation
+    def rollout_episode_callback(
+            env,
+            state_history,
+            obs_history,
+            action_history,
+            plan_history,
+            step_history,
+            *args,
+            **kwargs):
+        plot_run_summary(
+            dyn_id,
+            env,
+            obs_history,
+            action_history,
+            config_solver,
+            config_agent,
+            fig_folder,
+            **kwargs)
+        save_dict = {
+            'states': state_history,
+            'obses': obs_history,
+            'actions': action_history,
+            "values": kwargs["value_history"],
+            "process_times": kwargs["process_time_history"],
+            "barrier_indices": kwargs["barrier_filter_indices"],
+            "complete_indices": kwargs["complete_filter_indices"],
+            'deviation_history': kwargs['deviation_history'],
+            'safety_metrics': kwargs['safety_metric_history'],
+            'safe_opt_history': kwargs['safe_opt_history'],
+            'task_ctrl_history': kwargs['task_ctrl_history']}
+        save_dict_str = os.path.join(fig_folder, "save_data.npy")
+        print(f"Saving to: {save_dict_str}")
+        np.save(save_dict_str, save_dict)
+
+        solver_info = plan_history[-1]
+        if config_solver.FILTER_TYPE != "none":
+            print(
+                "\n\n --> Barrier filtering performed at {:.3f} steps.".format(
+                    solver_info['barrier_filter_steps']))
+            print(
+                "\n\n --> Complete filtering performed at {:.3f} steps.".format(
+                    solver_info['filter_steps']))
+
+
     args = parse_args()
     if args.seed == -1: 
         args.__dict__["seed"] = np.random.randint(1,1000000)
@@ -153,7 +245,8 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, line_search, sto
     config_agent = config['agent']
     config_solver = config['solver']
     config_solver.LINE_SEARCH = line_search
-    config_agent.is_task_ilqr = False
+    config_agent.is_task_ilqr = is_task_ilqr
+    config_agent.is_task_rl = is_task_rl
     config_solver.FILTER_TYPE = filter_type
     config_agent.FILTER_TYPE = filter_type
 
@@ -228,23 +321,11 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, line_search, sto
                 config_ilqr_cost, copy.deepcopy(env.agent.dyn), 'SoftCBF')
             env.cost = cost
 
-    env.agent.init_policy(
-        policy_type=policy_type,
-        config=config_solver,
-        cost=cost,
-        evaluation_cost=evaluation_cost,
-        task_cost=task_cost)
-    max_iter_receding = config_solver.MAX_ITER_RECEDING
-
-    # region: Runs iLQR
-    # Warms up jit
-    env.agent.get_action(obs=x_cur, state=x_cur, warmup=True)
-    env.report()
-
     # make directory
     ts = time.gmtime() 
-    ts = time.strftime("%m-%d-%s", ts)    
-    env_name = 'racecar_safety-debug' + str(ts)
+    #ts = time.strftime("%m-%d-%s", ts)    
+    env_name = 'racecar_safety-debug-tests' 
+    #+ str(ts)
 
     args.work_dir = os.path.join(args.work_dir, env_name)
     os.makedirs(args.work_dir, exist_ok=True)
@@ -274,22 +355,100 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, line_search, sto
         device=device
     )
 
+    env.agent.init_policy(
+        policy_type=policy_type,
+        config=config_solver,
+        cost=cost,
+        evaluation_cost=evaluation_cost,
+        task_cost=task_cost,
+        rl_task_policy=sac_agent)
+
+    max_iter_receding = config_solver.MAX_ITER_RECEDING
+
+    # region: Runs iLQR
+    # Warms up jit
+    env.agent.get_action(obs=x_cur, state=x_cur, warmup=True)
+    env.report()
+
     # Load model
-    # sac_agent.load(model_dir='/Users/athindranrameshkumar/Documents/Code/cbf_ddp_sac_learner/model_store/racecar_safety-debug01-26-1769489934/model/',
-    #                step=279304)
+    # sac_agent.load(model_dir='/Users/athindranrameshkumar/Documents/Code/cbf_ddp_sac_learner/model_store/racecar_safety-debug02-01-1769948595/model/',
+    #                step=586306)
 
     L = Logger(args.work_dir, use_tb=args.save_tb)
-
-    animate_dir = os.path.join(args.work_dir, 'animate')
+    sim_images_dir = os.path.join(args.work_dir, 'sim_images')
 
     env.train_sac_agent(sac_agent, replay_buffer, L, args, max_episode_length=max_iter_receding,  config_solver=config_solver, verbose=False)
     #env.evaluate_sac_agent(sac_agent, 40, L, 0, args)
 
-    obs_history, action_history, reward_history, done_history = env.simulate_trajectory_with_sac_agent(
-         T_rollout=max_iter_receding, end_criterion='failure', sac_agent=sac_agent, verbose=True, num_trajs=10,
-         sample_stochastically=False, should_animate=True, animate_dir=animate_dir, config_solver=config_solver,
-    )
+    # obs_history, action_history, reward_history, done_history = env.simulate_trajectory_with_sac_agent(
+    #      T_rollout=max_iter_receding, end_criterion='failure', sac_agent=sac_agent, verbose=True, num_trajs=10,
+    #      sample_stochastically=False, should_animate=True, animate_dir=animate_dir, config_solver=config_solver,
+    # )
 
+    should_animate = False
+    for traj_indx in range(10):
+        sim_images_dir_per_traj = os.path.join(sim_images_dir, f'traj_{traj_indx}/')
+        current_sim_images_dir = os.path.join(sim_images_dir_per_traj,
+            "road_boundary=" + str(road_boundary))
+        current_sim_images_dir = os.path.join(current_sim_images_dir, 'SoftCBF')
+        os.makedirs(current_sim_images_dir, exist_ok=True)
+
+        copyfile(
+            config_file,
+            os.path.join(
+                current_sim_images_dir,
+                'config.yaml'))
+        sys.stdout = PrintLogger(
+            os.path.join(
+                current_sim_images_dir,
+                'log.txt'))
+        sys.stderr = PrintLogger(
+            os.path.join(
+                current_sim_images_dir,
+                'log.txt'))
+
+        fig_folder = os.path.join(current_sim_images_dir, "figure")
+        fig_prog_folder = os.path.join(fig_folder, "progress")
+        os.makedirs(fig_prog_folder, exist_ok=True)
+
+        nominal_states, result, traj_info = env.simulate_one_trajectory(
+            T_rollout=max_iter_receding, end_criterion='failure',
+            rollout_step_callback=rollout_step_callback,
+            rollout_episode_callback=rollout_episode_callback,
+            advanced_animate=should_animate,
+        )
+
+        print(f"--------------------RESULT: {result}----------------------")
+        print(traj_info['step_history'][-1]["done_type"])
+        constraints: Dict = traj_info['step_history'][-1]['constraints']
+        for k, v in constraints.items():
+            print(f"{k}: {v[0, 1]:.1e}")
+        print("-----------------------------------------------------------")
+        
+        if should_animate:
+            # region: Visualizes
+            gif_path = os.path.join(fig_folder, 'rollout.gif')
+            frame_skip = 10
+            with imageio.get_writer(gif_path, mode='I') as writer:
+                for i in range(len(nominal_states) - 1):
+                    if frame_skip != 1 and (i + 1) % frame_skip != 0:
+                        continue
+                    filename = os.path.join(
+                        fig_prog_folder, str(i + 1) + ".png")
+                    image = imageio.imread(filename)
+                    writer.append_data(image)
+                    #Image(open(gif_path, 'rb').read(), width=400)
+            # endregion
+        
+        make_bicycle_comparison_report(
+            sim_images_dir_per_traj,
+            plot_folder=f'./sac_safety_filter_summary_rollout_{args.line_search}-{args.stopping_computation}/',
+            tag=plot_tag + "_" + str(args.road_boundary) + "_sim_index_" + str(traj_indx) + "_",
+            road_boundary=args.road_boundary,
+            dt=config_agent.DT,
+            cbf_gamma=config_solver.CBF_GAMMA,
+            soft_cbf_gamma=config_solver.SOFT_CBF_GAMMA,
+            filters=['SoftCBF'])
 
 if __name__ == '__main__':
     torch.multiprocessing.set_start_method('spawn')
@@ -297,6 +456,6 @@ if __name__ == '__main__':
     
     out_folder, plot_tag, config_agent = None, None, None
     jax.clear_caches()
-    main(args.config_file, args.road_boundary, filter_type='SoftCBF', is_task_ilqr=(not args.naive_task),         
+    main(args.config_file, args.road_boundary, filter_type='SoftCBF', is_task_ilqr=False, is_task_rl=True,         
                                                 line_search=args.line_search,
                                                 stopping_computation=args.stopping_computation)
