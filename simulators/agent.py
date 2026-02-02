@@ -181,9 +181,17 @@ class Agent:
                 prev_sol=prev_sol, prev_ctrl=prev_ctrl, 
             )
         else:
-            _action, _solver_info = self.policy.get_action(  # Proposed action.
-                obs=obs, agents_action=agents_action, **kwargs
-            )
+            start_time = time.time()
+            _action = self.policy.select_action(obs)
+            process_time = time.time() - start_time
+            _solver_info = {
+                'process_time': process_time ,
+                'num_iters': 0,
+                'Vopt': -1,
+                'deviation': -1,
+
+            }
+
         _action_dict[self.id] = _action
 
         return _action, _solver_info
@@ -205,6 +213,8 @@ class Agent:
             self.policy = iLQRReachability(
                 self.id, config, self.dyn, cost
             )
+        elif policy_type == "SACPolicy":
+            self.policy = rl_task_policy
         elif policy_type == "iLQRSafetyFilter":
             if self.is_task_rl:
                 self.task_policy = rl_task_policy    

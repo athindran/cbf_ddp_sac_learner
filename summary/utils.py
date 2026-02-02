@@ -813,10 +813,10 @@ def make_bicycle_comparison_report(prefix="./exps_may/ilqr/bic5D/yaw_testing/", 
 
     ax_st = subfigs_col2[2]
 
-    if 'reachability' in tag:
+    if config_cost.COST_TYPE == 'Reachability':
         max_value = 0.04
         upper_limit = 0.1
-    else:
+    elif config_cost.COST_TYPE == 'Reachavoid':
         max_value = 0.05
         upper_limit = 1.0
 

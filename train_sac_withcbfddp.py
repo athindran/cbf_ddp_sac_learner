@@ -83,6 +83,7 @@ def parse_args():
     parser.add_argument('--save_buffer', default=True, action='store_true')
     parser.add_argument('--save_model', default=True, action='store_true')
     parser.add_argument('--log_interval', default=500, type=int)
+    parser.add_argument('--training_mode', default=False, action='store_true')
 
     parser.add_argument(
         "-cf",
@@ -111,6 +112,7 @@ def parse_args():
         dest='naive_task',
         action='store_false')
     parser.add_argument('--should_animate', dest='should_animate', action='store_true')
+    parser.add_argument('--filter_type', help='Choose any/whether safety filter', type=str, default="none")
     parser.set_defaults(naive_task=False)
     
     args = parser.parse_args()
@@ -288,10 +290,13 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, is_task_rl,
     config_solver.COST_TYPE = config_cost.COST_TYPE
     if config_cost.COST_TYPE == "Reachavoid":
         if config_solver.FILTER_TYPE == "none":
-            policy_type = "iLQRReachAvoid"
+            policy_type = "SACPolicy"
             cost = BicycleReachAvoidMargin(
                 config_ilqr_cost, copy.deepcopy(env.agent.dyn), filter_type)
+            evaluation_cost = BicycleReachAvoidMargin(
+                config_ilqr_cost, copy.deepcopy(env.agent.dyn), 'SoftCBF')
             env.cost = cost
+            task_cost = None
         else:
             policy_type = "iLQRSafetyFilter"
             task_cost = BicycleCost(
@@ -305,10 +310,13 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, is_task_rl,
             env.cost = cost
     elif config_cost.COST_TYPE == "Reachability":
         if config_solver.FILTER_TYPE == "none":
-            policy_type = "iLQRReachability"
+            policy_type = "SACPolicy"
             cost = BicycleReachAvoidMargin(
                 config_ilqr_cost, copy.deepcopy(env.agent.dyn), filter_type)
+            evaluation_cost = BicycleReachAvoidMargin(
+                config_ilqr_cost, copy.deepcopy(env.agent.dyn), 'SoftCBF')
             env.cost = cost
+            task_cost = None
         else:
             policy_type = "iLQRSafetyFilter"
             task_cost = BicycleCost(
@@ -322,15 +330,17 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, is_task_rl,
             env.cost = cost
 
     # make directory
-    ts = time.gmtime() 
-    #ts = time.strftime("%m-%d-%s", ts)    
-    env_name = 'racecar_safety-debug-tests' 
-    #+ str(ts)
-
-    args.work_dir = os.path.join(args.work_dir, env_name)
-    os.makedirs(args.work_dir, exist_ok=True)
-    model_dir = make_dir(os.path.join(args.work_dir, 'model'))
-    buffer_dir = make_dir(os.path.join(args.work_dir, 'buffer'))
+    if args.training_mode:
+        ts = time.gmtime() 
+        ts = time.strftime("%m-%d-%s", ts)    
+        env_name = 'racecar_safety-debug-tests' + str(ts)
+        args.work_dir = os.path.join(args.work_dir, env_name)
+        os.makedirs(args.work_dir, exist_ok=True)
+        model_dir = make_dir(os.path.join(args.work_dir, 'model'))
+        buffer_dir = make_dir(os.path.join(args.work_dir, 'buffer'))
+    else:
+        model_dir = make_dir(os.path.join(args.load_dir, 'model'))
+        buffer_dir = make_dir(os.path.join(args.load_dir, 'buffer'))
 
     with open(os.path.join(args.work_dir, 'args.json'), 'w') as f:
         json.dump(vars(args), f, sort_keys=True, indent=4)
@@ -370,27 +380,30 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, is_task_rl,
     env.agent.get_action(obs=x_cur, state=x_cur, warmup=True)
     env.report()
 
-    # Load model
-    # sac_agent.load(model_dir='/Users/athindranrameshkumar/Documents/Code/cbf_ddp_sac_learner/model_store/racecar_safety-debug02-01-1769948595/model/',
-    #                step=586306)
+    if args.training_mode:
+        env.train_sac_agent(sac_agent, replay_buffer, L, args, max_episode_length=max_iter_receding,  config_solver=config_solver, verbose=False)
+        env.evaluate_sac_agent(sac_agent, args.num_eval_episodes, L, 0, args)
+        sim_images_dir = os.path.join(args.work_dir, 'sim_images')
+    else:
+        # Load model
+        sac_agent.load(model_dir=model_dir,
+                    step=args.load_index)
+        sim_images_dir = os.path.join(args.load_dir, 'sim_images')
 
     L = Logger(args.work_dir, use_tb=args.save_tb)
-    sim_images_dir = os.path.join(args.work_dir, 'sim_images')
-
-    env.train_sac_agent(sac_agent, replay_buffer, L, args, max_episode_length=max_iter_receding,  config_solver=config_solver, verbose=False)
-    #env.evaluate_sac_agent(sac_agent, 40, L, 0, args)
 
     # obs_history, action_history, reward_history, done_history = env.simulate_trajectory_with_sac_agent(
     #      T_rollout=max_iter_receding, end_criterion='failure', sac_agent=sac_agent, verbose=True, num_trajs=10,
     #      sample_stochastically=False, should_animate=True, animate_dir=animate_dir, config_solver=config_solver,
     # )
 
+    # Works only with SoftCBF filters now.
     should_animate = False
     for traj_indx in range(10):
         sim_images_dir_per_traj = os.path.join(sim_images_dir, f'traj_{traj_indx}/')
         current_sim_images_dir = os.path.join(sim_images_dir_per_traj,
             "road_boundary=" + str(road_boundary))
-        current_sim_images_dir = os.path.join(current_sim_images_dir, 'SoftCBF')
+        current_sim_images_dir = os.path.join(current_sim_images_dir, args.filter_type)
         os.makedirs(current_sim_images_dir, exist_ok=True)
 
         copyfile(
@@ -439,16 +452,17 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, is_task_rl,
                     writer.append_data(image)
                     #Image(open(gif_path, 'rb').read(), width=400)
             # endregion
-        
-        make_bicycle_comparison_report(
-            sim_images_dir_per_traj,
-            plot_folder=f'./sac_safety_filter_summary_rollout_{args.line_search}-{args.stopping_computation}/',
-            tag=plot_tag + "_" + str(args.road_boundary) + "_sim_index_" + str(traj_indx) + "_",
-            road_boundary=args.road_boundary,
-            dt=config_agent.DT,
-            cbf_gamma=config_solver.CBF_GAMMA,
-            soft_cbf_gamma=config_solver.SOFT_CBF_GAMMA,
-            filters=['SoftCBF'])
+
+        if args.filter_type == 'SoftCBF':
+            make_bicycle_comparison_report(
+                sim_images_dir_per_traj,
+                plot_folder=f'./sac_safety_filter_summary_rollout_{args.line_search}-{args.stopping_computation}/',
+                tag=plot_tag + "_" + str(args.road_boundary) + "_sim_index_" + str(traj_indx) + "_",
+                road_boundary=args.road_boundary,
+                dt=config_agent.DT,
+                cbf_gamma=config_solver.CBF_GAMMA,
+                soft_cbf_gamma=config_solver.SOFT_CBF_GAMMA,
+                filters=['SoftCBF'])
 
 if __name__ == '__main__':
     torch.multiprocessing.set_start_method('spawn')
@@ -456,6 +470,6 @@ if __name__ == '__main__':
     
     out_folder, plot_tag, config_agent = None, None, None
     jax.clear_caches()
-    main(args.config_file, args.road_boundary, filter_type='SoftCBF', is_task_ilqr=False, is_task_rl=True,         
+    main(args.config_file, args.road_boundary, filter_type=args.filter_type, is_task_ilqr=False, is_task_rl=True,         
                                                 line_search=args.line_search,
                                                 stopping_computation=args.stopping_computation)

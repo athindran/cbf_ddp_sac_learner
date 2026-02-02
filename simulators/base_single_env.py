@@ -291,9 +291,9 @@ class BaseSingleEnv(BaseEnv):
             prev_ctrl = np.array( action )
             prev_sol = solver_info
 
-            if solver_info['mark_barrier_filter']:
+            if 'mark_barrier_filter' in solver_info.keys() and solver_info['mark_barrier_filter']:
                 barrier_filter_indices.append(t)
-            if solver_info['mark_complete_filter']:
+            if 'mark_complete_filter' in solver_info.keys() and solver_info['mark_complete_filter']:
                 complete_filter_indices.append(t)
 
             # Applies action: `done` and `info` are evaluated at the next
@@ -310,9 +310,16 @@ class BaseSingleEnv(BaseEnv):
             step_history.append(step_info)
             process_time_history.append(solver_info['process_time'])
             solver_iters_history.append(solver_info['num_iters'])
-            deviation_history.append(solver_info['deviation'])
-            safe_opt_history.append(solver_info['safe_opt_ctrl'])
-            task_ctrl_history.append(solver_info['task_ctrl'])
+
+            if self.agent.policy_type == "iLQRSafetyFilter":
+                deviation_history.append(solver_info['deviation'])
+                safe_opt_history.append(solver_info['safe_opt_ctrl'])
+                task_ctrl_history.append(solver_info['task_ctrl'])
+                controls_initialize = np.array(solver_info['reinit_controls'])
+            else:
+                deviation_history.append(np.zeros((2,)))
+                safe_opt_history.append(np.zeros((2,)))
+                task_ctrl_history.append(action) 
 
             if self.agent.compute_evaluation_margin:
                 _, margin_info = self.agent.evaluation_margin_solver.get_action(obs=np.array(self.state), state=np.array(self.state), 
@@ -360,8 +367,8 @@ class BaseSingleEnv(BaseEnv):
                         self, state_history, obs_history, action_history, plan_history, step_history, safety_plan=safety_plan, 
                                 barrier_filter_indices=barrier_filter_indices, complete_filter_indices=complete_filter_indices,
                     )
-            else:
-                safety_plan = np.asarray(solver_info['states'])
+            # else:
+            #     safety_plan = np.asarray(solver_info['states'])
 
             # Checks termination criterion.
             if done:
@@ -371,15 +378,15 @@ class BaseSingleEnv(BaseEnv):
                     result = -1
                 break
 
-            controls_initialize = np.array(solver_info['reinit_controls'])
 
         if rollout_episode_callback is not None:
+            filter_label = "none" if self.agent.safety_policy is None else self.agent.safety_policy.filter_type
             rollout_episode_callback(
                 self, state_history, obs_history, action_history, plan_history, step_history, value_history=value_history, process_time_history=process_time_history,
                 solver_iters_history=solver_iters_history, deviation_history=deviation_history, safety_metric_history=safety_metric_history,
                 safe_opt_history=safe_opt_history, task_ctrl_history=task_ctrl_history,
                 barrier_filter_indices=barrier_filter_indices, complete_filter_indices=complete_filter_indices,
-                label=self.agent.safety_policy.filter_type
+                label=filter_label,
             )
         # Reverts to training setting.
         self.timeout = timeout_backup
@@ -389,7 +396,9 @@ class BaseSingleEnv(BaseEnv):
             plan_history=plan_history, reward_history=np.array(reward_history),
             step_history=step_history
         )
-        self.agent.safety_policy.reset_metadata()
+
+        if self.agent.safety_policy is not None and self.agent.safety_policy.filter_type == 'SoftCBF':
+            self.agent.safety_policy.reset_metadata()
 
         self.reset_rej_sampling = reset_rejection_sampling_old
 
