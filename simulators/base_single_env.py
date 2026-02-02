@@ -496,7 +496,7 @@ class BaseSingleEnv(BaseEnv):
                     action, solver_info = self.agent.get_action(
                         obs=obs, controls=controls_initialize,
                         prev_sol=prev_sol, state=self.state, prev_ctrl=prev_ctrl,
-                        sample_stochastically=True,
+                        sample_stochastically=False,
                     )
                     prev_ctrl = np.array( action )
                     prev_sol = solver_info
