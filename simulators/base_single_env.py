@@ -523,7 +523,7 @@ class BaseSingleEnv(BaseEnv):
             if should_animate:
                 # region: Visualizes
                 gif_path = os.path.join(animate_dir_curr, 'rollout.gif')
-                frame_skip = 5
+                frame_skip = 10
                 with imageio.get_writer(gif_path, mode='I') as writer:
                     for i in range(sim_step - 1):
                         if frame_skip != 1 and i % frame_skip != 0:

@@ -72,6 +72,7 @@ class Agent:
         self.is_task_rl = getattr(config, 'is_task_rl', False)
         self.compute_evaluation_margin = True
         self.ticks = 357
+        self.seed = getattr(config, 'SEED', 21)
 
     def integrate_forward(
         self, state: np.ndarray, control: np.ndarray = None
@@ -114,9 +115,9 @@ class Agent:
         assert control is not None, (
             "You need to pass in a control!"
         )
-        self.ticks = self.ticks + 1
+        # self.ticks = self.ticks + 1
         return self.dyn.integrate_forward_with_noise(
-            state=state, control=control, seed = self.ticks
+            state=state, control=control, seed = self.seed
         )
 
     def get_dyn_jacobian(

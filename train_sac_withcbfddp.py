@@ -248,6 +248,8 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, is_task_rl,
     config_agent = config['agent']
     config_solver = config['solver']
     config_env.penalize_safety_filter_active = args.penalize_safety_filter_active
+    config_env.SEED = args.seed
+    config_agent.SEED = args.seed
     config_solver.LINE_SEARCH = line_search
     config_agent.is_task_ilqr = is_task_ilqr
     config_agent.is_task_rl = is_task_rl
