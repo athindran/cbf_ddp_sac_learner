@@ -41,6 +41,7 @@ class BaseSingleEnv(BaseEnv):
         self.state_dim = self.agent.dyn.dim_x
 
         self.integrate_kwargs = getattr(config_env, "INTEGRATE_KWARGS", {})
+        self.penalize_safety_filter_active = getattr(config_env, "penalize_safety_filter_active", False)
         if "noise" in self.integrate_kwargs:
             if self.integrate_kwargs['noise'] is not None:
                 self.integrate_kwargs['noise'] = np.array(
@@ -125,8 +126,11 @@ class BaseSingleEnv(BaseEnv):
         safe_stop_reward = -20.0 if (done and info['done_type'] == "safe_stop") else 0.0
         timeout_reward = obs[0] if (done and info['done_type'] == "timeout") else 0.0
         velocity_maintenance_reward = -np.abs(obs[2] - 2.2)*0.005
-        safety_filtering_cost = -0.2 if solver_info['mark_barrier_filter'] else 0.0
-        safety_filtering_cost +=  -0.3 if solver_info['mark_complete_filter'] else 0.0
+        safety_filtering_cost = 0.0
+
+        if self.penalize_safety_filter_active:
+            safety_filtering_cost += -0.2 if solver_info['mark_barrier_filter'] else 0.0
+            safety_filtering_cost +=  -0.3 if solver_info['mark_complete_filter'] else 0.0
 
         reward = float(reward_constraint + track_completion_reward + timeout_reward + safe_stop_reward + velocity_maintenance_reward + safety_filtering_cost)
 
@@ -420,6 +424,9 @@ class BaseSingleEnv(BaseEnv):
 
         for traj_indx in range(num_trajs):
             obs = self.reset()
+            prev_sol = None
+            controls_initialize = None
+            prev_ctrl = np.array([0.0, 0.0])     
             done = False
             episode_reward = 0
             obs_history = []
@@ -486,12 +493,17 @@ class BaseSingleEnv(BaseEnv):
 
                 # center crop image
                 with eval_mode(sac_agent):
-                    if sample_stochastically:
-                        action = sac_agent.sample_action(obs)
-                    else:
-                        action = sac_agent.select_action(obs)
+                    action, solver_info = self.agent.get_action(
+                        obs=obs, controls=controls_initialize,
+                        prev_sol=prev_sol, state=self.state, prev_ctrl=prev_ctrl,
+                        sample_stochastically=True,
+                    )
+                    prev_ctrl = np.array( action )
+                    prev_sol = solver_info
+                    if 'reinit_controls' in solver_info.keys():
+                        controls_initialize = np.array(solver_info['reinit_controls'])
 
-                obs, reward, done, step_info = self.step_with_sac_agent(action)
+                obs, reward, done, INFO = self.step_with_sac_agent(np.array(action), solver_info)
                 episode_reward += reward
                 obs_history.append(obs)
                 action_history.append(action)
@@ -616,12 +628,12 @@ class BaseSingleEnv(BaseEnv):
                             print(f"{k}: {v[0, 1]:.1e}")
                         print("-----------------------------------------------------------")
                     
-                    # if episode % args.eval_freq == 0:
-                    #     _, _, _, _ = self.simulate_trajectory_with_sac_agent(
-                    #         T_rollout=max_episode_length, end_criterion='failure', sac_agent=sac_agent, verbose=verbose, num_trajs=2,
-                    #             sample_stochastically=False, should_animate=True, animate_dir=animate_dir + '_' + str(train_step), config_solver=config_solver,
-                    #         )
-                    start_time = time.time()
+                    if episode % args.eval_freq == 0:
+                        _, _, _, _ = self.simulate_trajectory_with_sac_agent(
+                            T_rollout=max_episode_length, end_criterion='failure', sac_agent=sac_agent, verbose=verbose, num_trajs=2,
+                                sample_stochastically=False, should_animate=True, animate_dir=animate_dir + '_' + str(train_step), config_solver=config_solver,
+                            )
+                    # start_time = time.time()
                 #if train_step % args.log_interval == 0:
                 if True:
                     L.log('train/episode_reward', episode_reward, train_step)

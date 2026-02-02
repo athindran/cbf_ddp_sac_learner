@@ -42,13 +42,13 @@ def parse_args():
     parser.add_argument('--replay_buffer_capacity', default=2000000, type=int)
     # train
     parser.add_argument('--agent', default='curl_sac', type=str)
-    parser.add_argument('--init_steps', default=1000, type=int)
+    parser.add_argument('--init_steps', default=10, type=int)
     parser.add_argument('--num_train_steps', default=230000, type=int)
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--hidden_dim', default=256, type=int)
     # eval
     parser.add_argument('--eval_freq', default=100, type=int)
-    parser.add_argument('--num_eval_episodes', default=50, type=int)
+    parser.add_argument('--num_eval_episodes', default=20, type=int)
     # critic
     parser.add_argument('--critic_lr', default=5e-5, type=float)
     parser.add_argument('--critic_beta', default=0.9, type=float)
@@ -84,6 +84,7 @@ def parse_args():
     parser.add_argument('--save_model', default=True, action='store_true')
     parser.add_argument('--log_interval', default=500, type=int)
     parser.add_argument('--training_mode', default=False, action='store_true')
+    parser.add_argument('--penalize_safety_filter_active', default=False, action='store_true')
 
     parser.add_argument(
         "-cf",
@@ -246,6 +247,7 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, is_task_rl,
     config_env = config['environment']
     config_agent = config['agent']
     config_solver = config['solver']
+    config_env.penalize_safety_filter_active = args.penalize_safety_filter_active
     config_solver.LINE_SEARCH = line_search
     config_agent.is_task_ilqr = is_task_ilqr
     config_agent.is_task_rl = is_task_rl
@@ -338,9 +340,13 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, is_task_rl,
         os.makedirs(args.work_dir, exist_ok=True)
         model_dir = make_dir(os.path.join(args.work_dir, 'model'))
         buffer_dir = make_dir(os.path.join(args.work_dir, 'buffer'))
+        sim_images_dir = os.path.join(args.work_dir, 'sim_images')
+        os.makedirs(sim_images_dir, exist_ok=True)
     else:
         model_dir = make_dir(os.path.join(args.load_dir, 'model'))
         buffer_dir = make_dir(os.path.join(args.load_dir, 'buffer'))
+        sim_images_dir = os.path.join(args.load_dir, 'sim_images')
+        os.makedirs(sim_images_dir, exist_ok=True)
 
     with open(os.path.join(args.work_dir, 'args.json'), 'w') as f:
         json.dump(vars(args), f, sort_keys=True, indent=4)
@@ -379,26 +385,23 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, is_task_rl,
     # Warms up jit
     env.agent.get_action(obs=x_cur, state=x_cur, warmup=True)
     env.report()
+    L = Logger(args.work_dir, use_tb=args.save_tb)
 
     if args.training_mode:
         env.train_sac_agent(sac_agent, replay_buffer, L, args, max_episode_length=max_iter_receding,  config_solver=config_solver, verbose=False)
-        env.evaluate_sac_agent(sac_agent, args.num_eval_episodes, L, 0, args)
-        sim_images_dir = os.path.join(args.work_dir, 'sim_images')
+        env.evaluate_sac_agent(sac_agent, args.num_eval_episodes, L, args.num_train_steps, args)
     else:
         # Load model
         sac_agent.load(model_dir=model_dir,
                     step=args.load_index)
         sim_images_dir = os.path.join(args.load_dir, 'sim_images')
-
-    L = Logger(args.work_dir, use_tb=args.save_tb)
-
     # obs_history, action_history, reward_history, done_history = env.simulate_trajectory_with_sac_agent(
     #      T_rollout=max_iter_receding, end_criterion='failure', sac_agent=sac_agent, verbose=True, num_trajs=10,
     #      sample_stochastically=False, should_animate=True, animate_dir=animate_dir, config_solver=config_solver,
     # )
 
     # Works only with SoftCBF filters now.
-    should_animate = False
+    should_animate = True
     for traj_indx in range(10):
         sim_images_dir_per_traj = os.path.join(sim_images_dir, f'traj_{traj_indx}/')
         current_sim_images_dir = os.path.join(sim_images_dir_per_traj,
