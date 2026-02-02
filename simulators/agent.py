@@ -143,6 +143,7 @@ class Agent:
         warmup: bool = False,
         prev_sol: Optional[Dict] = None, 
         prev_ctrl:np.ndarray = np.array([0.0, 0.0]), 
+        sample_stochastically: Optional[bool] = False,
         **kwargs
     ) -> Tuple[np.ndarray, dict]:
         """Gets the action to execute.
@@ -170,7 +171,10 @@ class Agent:
             if self.is_task_ilqr:
                 task_ctrl, _ = self.task_policy.get_action(obs=obs, controls=None, state=kwargs['state'], warmup=warmup)
             elif self.is_task_rl:
-                task_ctrl = self.task_policy.select_action(obs)
+                if sample_stochastically:
+                    task_ctrl = self.task_policy.sample_action(obs)
+                else:
+                    task_ctrl = self.task_policy.select_action(obs)
             elif self.dyn.id ==  "PVTOL6D":
                 task_ctrl = self.task_policy(obs, self.dyn)
             else:
@@ -181,11 +185,13 @@ class Agent:
                 prev_sol=prev_sol, prev_ctrl=prev_ctrl, 
             )
         else:
-            start_time = time.time()
-            _action = self.policy.select_action(obs)
-            process_time = time.time() - start_time
+            if sample_stochastically:
+                _action = self.policy.sample_action(obs)
+            else:
+                _action = self.policy.select_action(obs)
+
             _solver_info = {
-                'process_time': process_time ,
+                'process_time': 0.0,
                 'num_iters': 0,
                 'Vopt': -1,
                 'deviation': -1,

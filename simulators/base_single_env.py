@@ -81,7 +81,7 @@ class BaseSingleEnv(BaseEnv):
         return obs, cost, done, info
 
     def step_with_sac_agent(
-        self, action: np.ndarray
+        self, action: np.ndarray, solver_info: Dict
     ) -> Tuple[np.ndarray, float, bool, Dict]:
         """Implements the step function for the RL environment.
 
@@ -125,8 +125,10 @@ class BaseSingleEnv(BaseEnv):
         safe_stop_reward = -20.0 if (done and info['done_type'] == "safe_stop") else 0.0
         timeout_reward = obs[0] if (done and info['done_type'] == "timeout") else 0.0
         velocity_maintenance_reward = -np.abs(obs[2] - 2.2)*0.005
+        safety_filtering_cost = -0.2 if solver_info['mark_barrier_filter'] else 0.0
+        safety_filtering_cost +=  -0.3 if solver_info['mark_complete_filter'] else 0.0
 
-        reward = float(reward_constraint + track_completion_reward + timeout_reward + safe_stop_reward + velocity_maintenance_reward)
+        reward = float(reward_constraint + track_completion_reward + timeout_reward + safe_stop_reward + velocity_maintenance_reward + safety_filtering_cost)
 
         return obs, reward, done, info
 
@@ -298,7 +300,7 @@ class BaseSingleEnv(BaseEnv):
 
             # Applies action: `done` and `info` are evaluated at the next
             # state.
-            obs, reward, done, step_info = self.step_with_sac_agent(np.array(action))
+            obs, reward, done, step_info = self.step_with_sac_agent(np.array(action), solver_info)
 
             # Executes step callback and stores historyory.
             state_history.append(self.state)
@@ -536,19 +538,27 @@ class BaseSingleEnv(BaseEnv):
             prefix = 'stochastic_' if sample_stochastically else ''
             for i in range(num_episodes):
                 obs = self.reset()
+                prev_sol = None
+                margin_initializer = None
+                controls_initialize = None
+                prev_ctrl = np.array([0.0, 0.0])                
                 done = False
                 episode_reward = 0
                 
                 while not done:
                     # center crop image
                     with eval_mode(sac_agent):
-                        if sample_stochastically:
-                            action = sac_agent.sample_action(obs)
-                        else:
-                            action = sac_agent.select_action(obs)
+                        action, solver_info = self.agent.get_action(
+                            obs=obs, controls=controls_initialize,
+                            prev_sol=prev_sol, state=self.state, prev_ctrl=prev_ctrl
+                        )
 
-                    obs, reward, done, INFO = self.step_with_sac_agent(action)
+                    obs, reward, done, INFO = self.step_with_sac_agent(np.array(action), solver_info)
                     episode_reward += reward
+                    prev_ctrl = np.array( action )
+                    prev_sol = solver_info
+                    if 'reinit_controls' in solver_info.keys():
+                        controls_initialize = np.array(solver_info['reinit_controls'])
 
                 L.log('eval/' + prefix + 'episode_reward', episode_reward, step)
                 all_ep_rewards.append(episode_reward)
@@ -562,6 +572,11 @@ class BaseSingleEnv(BaseEnv):
         run_eval_loop(sample_stochastically=False)
         L.dump(step)
         self.reset()
+                    
+        prev_sol = None
+        margin_initializer = None
+        prev_ctrl = np.array([0.0, 0.0])
+  
         self.reset_rej_sampling = reset_rejection_sampling_old
 
         return
@@ -601,18 +616,22 @@ class BaseSingleEnv(BaseEnv):
                             print(f"{k}: {v[0, 1]:.1e}")
                         print("-----------------------------------------------------------")
                     
-                    if episode % args.eval_freq == 0:
-                        _, _, _, _ = self.simulate_trajectory_with_sac_agent(
-                            T_rollout=max_episode_length, end_criterion='failure', sac_agent=sac_agent, verbose=verbose, num_trajs=2,
-                                sample_stochastically=False, should_animate=True, animate_dir=animate_dir + '_' + str(train_step), config_solver=config_solver,
-                            )
-
+                    # if episode % args.eval_freq == 0:
+                    #     _, _, _, _ = self.simulate_trajectory_with_sac_agent(
+                    #         T_rollout=max_episode_length, end_criterion='failure', sac_agent=sac_agent, verbose=verbose, num_trajs=2,
+                    #             sample_stochastically=False, should_animate=True, animate_dir=animate_dir + '_' + str(train_step), config_solver=config_solver,
+                    #         )
                     start_time = time.time()
                 #if train_step % args.log_interval == 0:
                 if True:
                     L.log('train/episode_reward', episode_reward, train_step)
-               
+
                 obs = self.reset()
+
+                prev_sol = None
+                margin_initializer = None
+                prev_ctrl = np.array([0.0, 0.0])
+                controls_initialize = None
                 done = False
                 episode_reward = 0
                 episode_step = 0
@@ -625,9 +644,19 @@ class BaseSingleEnv(BaseEnv):
             # sample action for data collection
             if train_step < args.init_steps:
                 action = self.action_space.sample()
+                solver_info = {'mark_barrier_filter': False, 'mark_complete_filter': False}
             else:
                 with eval_mode(sac_agent):
-                    action = sac_agent.sample_action(obs)
+                    action, solver_info = self.agent.get_action(
+                        obs=obs, controls=controls_initialize,
+                        prev_sol=prev_sol, state=self.state, prev_ctrl=prev_ctrl,
+                        sample_stochastically=True,
+                    )
+                    prev_ctrl = np.array( action )
+                    prev_sol = solver_info
+                    if 'reinit_controls' in solver_info.keys():
+                        controls_initialize = np.array(solver_info['reinit_controls'])
+
 
             # run training update
             if train_step >= args.init_steps:
@@ -635,8 +664,9 @@ class BaseSingleEnv(BaseEnv):
                 for _ in range(num_updates):
                     sac_agent.update(replay_buffer, L, train_step)
 
-            next_obs, reward, done, step_info = self.step_with_sac_agent(action)
-    
+            next_obs, reward, done, step_info = self.step_with_sac_agent(np.array(action), solver_info)
+            L.log('train/done_type', step_info['done_type'], train_step)
+
             # allow infinity bootstrap
             done_bool = 0 if episode_step + 1 == max_episode_length else float(
                 done
