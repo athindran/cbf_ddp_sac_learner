@@ -15,8 +15,8 @@ environment:
     - [0., 1.0]
     - [-2.0, 2.0]
     - [1.5, 2.5]
-    - [-0.3, 0.3]
-    - [-0.3, 0.3]
+    - [-0.25, 0.25]
+    - [-0.25, 0.25]
   RESET_REJ_SAMPLING: false
   tag: 'mul_obs_reachability_config1_bic5d_train'
 

@@ -265,6 +265,8 @@ class iLQRSafetyFilter(BasePolicy):
                     control_cbf_cand - task_ctrl, ord=1)
                 solver_info_0['qcqp_initialize'] = control_cbf_cand - task_ctrl
                 solver_info_0['process_time'] = time.time() - start_time
+                # print(warmup, solver_info_0['process_time'])
+                # assert solver_info_0['process_time'] <= 0.1 or warmup
                 return control_cbf_cand.ravel() + solver_info_0['K_closed_loop'][:, :, 0] @ (initial_state - solver_info_0['states'][:, 0]), solver_info_0
 
         self.filter_steps += 1

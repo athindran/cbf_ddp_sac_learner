@@ -79,7 +79,7 @@ def parse_args():
     parser.add_argument('--work_dir', default='/Users/athindranrameshkumar/Documents/Code/cbf_ddp_sac_learner/model_store', type=str)
     parser.add_argument('--load_dir', default='None', type=str)
     parser.add_argument('--load_index', default=0, type=str)
-    parser.add_argument('--save_tb', default=False, action='store_true')
+    parser.add_argument('--save_tb', default=True, action='store_true')
     parser.add_argument('--save_buffer', default=True, action='store_true')
     parser.add_argument('--save_model', default=True, action='store_true')
     parser.add_argument('--log_interval', default=500, type=int)
@@ -403,7 +403,7 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, is_task_rl,
     # )
 
     # Works only with SoftCBF filters now.
-    should_animate = True
+    should_animate = False
     for traj_indx in range(10):
         sim_images_dir_per_traj = os.path.join(sim_images_dir, f'traj_{traj_indx}/')
         current_sim_images_dir = os.path.join(sim_images_dir_per_traj,
@@ -428,6 +428,10 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, is_task_rl,
         fig_folder = os.path.join(current_sim_images_dir, "figure")
         fig_prog_folder = os.path.join(fig_folder, "progress")
         os.makedirs(fig_prog_folder, exist_ok=True)
+
+        jax.clear_caches()
+        # Warmup again
+        env.agent.get_action(obs=x_cur, state=x_cur, warmup=True)
 
         nominal_states, result, traj_info = env.simulate_one_trajectory(
             T_rollout=max_iter_receding, end_criterion='failure',
@@ -461,7 +465,7 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, is_task_rl,
         if args.filter_type == 'SoftCBF':
             make_bicycle_comparison_report(
                 sim_images_dir_per_traj,
-                plot_folder=f'./sac_safety_filter_summary_rollout_{args.line_search}-{args.stopping_computation}/',
+                plot_folder=f'./sac_safety_filter_summary_rollout_{args.seed}_{args.line_search}-{args.stopping_computation}/',
                 tag=plot_tag + "_" + str(args.road_boundary) + "_sim_index_" + str(traj_indx) + "_",
                 road_boundary=args.road_boundary,
                 dt=config_agent.DT,

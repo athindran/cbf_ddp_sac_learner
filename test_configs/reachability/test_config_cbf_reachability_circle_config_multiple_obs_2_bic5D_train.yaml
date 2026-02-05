@@ -17,8 +17,8 @@ environment:
     - [0., 1.0]
     - [-2.0, 2.0]
     - [1.5, 2.3]
-    - [-0.3, 0.3]
-    - [-0.3, 0.3]
+    - [-0.25, 0.25]
+    - [-0.25, 0.25]
   RESET_REJ_SAMPLING: false
   tag: 'mul_obs_reachability_config1_bic5d_train_2'
 
@@ -89,6 +89,6 @@ solver:
   OUT_FOLDER: exps/ilqr/bic5D/reachability_experiment_mulobs_config1_train/
   DEVICE: cpu
   # options: 'ILQR', 'DDP'.
-  ORDER: 'DDP'
+  ORDER: 'ILQR'
   FIG_SIZE_X: 6.0
   FIG_SIZE_Y: 5.0

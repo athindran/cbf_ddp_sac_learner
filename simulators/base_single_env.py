@@ -601,6 +601,14 @@ class BaseSingleEnv(BaseEnv):
         model_dir = make_dir(os.path.join(args.work_dir, 'model'))
         buffer_dir = make_dir(os.path.join(args.work_dir, 'buffer'))
 
+        done_type_log_map = {
+            'leave_track_with_no_failure': 0,
+            'not_raised': 1,
+            'timeout': 2,
+            'safe_stop': 3,
+            'failure': 4,
+        }
+
         with open(os.path.join(args.work_dir, 'args.json'), 'w') as f:
             json.dump(vars(args), f, sort_keys=True, indent=4)
 
@@ -619,6 +627,7 @@ class BaseSingleEnv(BaseEnv):
                 if train_step > 0:
                     if True:
                         L.log('train/duration', time.time() - start_time, train_step)
+                        L.log('train/done_type', int(done_type_log_map[step_info['done_type']]), train_step)
                         L.dump(train_step)
                     if verbose:
                         print(f"--------------------RESULT: ----------------------")
@@ -677,7 +686,6 @@ class BaseSingleEnv(BaseEnv):
                     sac_agent.update(replay_buffer, L, train_step)
 
             next_obs, reward, done, step_info = self.step_with_sac_agent(np.array(action), solver_info)
-            L.log('train/done_type', step_info['done_type'], train_step)
 
             # allow infinity bootstrap
             done_bool = 0 if episode_step + 1 == max_episode_length else float(

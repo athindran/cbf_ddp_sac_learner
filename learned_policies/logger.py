@@ -10,7 +10,7 @@ from termcolor import colored
 FORMAT_CONFIG = {
     'rl': {
         'train': [
-            ('episode', 'E', 'int'), ('step', 'S', 'int'), ('done_type', 'T', 'str'),
+            ('episode', 'E', 'int'), ('step', 'S', 'int'), ('done_type', 'T', 'int'),
             ('duration', 'D', 'time'), ('episode_reward', 'R', 'float'),
             ('batch_reward', 'BR', 'float'), ('actor_loss', 'A_LOSS', 'float'),
             ('critic_loss', 'CR_LOSS', 'float'), ('curl_loss', 'CU_LOSS', 'float'),
@@ -119,7 +119,10 @@ class Logger(object):
 
     def _try_sw_log(self, key, value, step):
         if self._sw is not None:
-            self._sw.add_scalar(key, value, step)
+            if isinstance(value, str):
+                self._sw.add_text(key, value, step)
+            else:
+                self._sw.add_scalar(key, value, step)
 
     def _try_sw_log_image(self, key, image, step):
         if self._sw is not None:
@@ -141,11 +144,12 @@ class Logger(object):
         assert key.startswith('train') or key.startswith('eval')
         if type(value) == torch.Tensor:
             value = value.item()
-        if not isinstance(value, str):
+        if not isinstance(value, str) or key!='done_type':
             self._try_sw_log(key, value / n, step)
             mg = self._train_mg if key.startswith('train') else self._eval_mg
             mg.log(key, value, n)
         else:
+            self._try_sw_log(key, value, step)
             mg = self._train_mg if key.startswith('train') else self._eval_mg
             mg.log(key, value, n)
 
