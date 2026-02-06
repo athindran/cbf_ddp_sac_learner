@@ -400,7 +400,7 @@ class BaseSingleEnv(BaseEnv):
         info = dict(
             obs_history=np.array(obs_history), action_history=np.array(action_history),
             plan_history=plan_history, reward_history=np.array(reward_history),
-            step_history=step_history
+            step_history=step_history, barrier_filter_indices=barrier_filter_indices, complete_filter_indices=complete_filter_indices,
         )
 
         if self.agent.safety_policy is not None and self.agent.safety_policy.filter_type == 'SoftCBF':
