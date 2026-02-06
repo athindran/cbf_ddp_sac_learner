@@ -704,6 +704,12 @@ class BaseSingleEnv(BaseEnv):
 
             obs = np.array(next_obs)
             episode_step += 1
+        
+        # Save model at end of training.
+        if args.save_model:
+            sac_agent.save(model_dir, train_step)
+        if args.save_buffer:
+            replay_buffer.save(buffer_dir)
 
         self.reset_rej_sampling = reset_rejection_sampling_old
 
