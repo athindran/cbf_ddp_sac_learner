@@ -5,7 +5,7 @@ from jax import numpy as jnp
 
 import copy
 import numpy as np
-
+import gc
 from .ilqr_reachavoid_policy import iLQRReachAvoid
 from .ilqr_reachability_policy import iLQRReachability
 from .base_policy import BasePolicy
@@ -72,9 +72,11 @@ class iLQRSafetyFilter(BasePolicy):
         prev_ctrl: np.ndarray = np.array([0.0, 0.0]), 
         warmup=False,
     ) -> np.ndarray:
+        # Turn off python cyclic garbage collection
+        gc.disable()
 
         # Task feedback policy
-        start_time = time.time()
+        start_time = time.perf_counter()
         initial_state = np.array(state)
         stopping_ctrl = np.array([self.dyn.ctrl_space[0, 0], 0])
         task_ctrl = np.array(task_ctrl)
@@ -85,21 +87,8 @@ class iLQRSafetyFilter(BasePolicy):
         else:
             controls_initialize = None
 
-        if prev_sol is None or prev_sol['resolve']:
-            control_0, solver_info_0 = self.solver_0.get_action(
-                obs=obs, controls=controls_initialize, state=state)
-        else:
-            # Potential source of acceleration. We don't need to resolve both ILQs as we can reuse
-            # solution from previous time. - Unused currently.
-            solver_info_0 = prev_sol['bootstrap_next_solution']
-            control_0 = (solver_info_0['controls'][:, 0] 
-                            + solver_info_0['K_closed_loop'][:, :, 0] @ (initial_state - solver_info_0['states'][:, 0]))
-            # Closed loop solution
-            #solver_info_0['controls'] = jnp.array( solver_info_0['reinit_controls'] )
-            #solver_info_0['states'] = jnp.array( solver_info_0['reinit_states'] )
-            #solver_info_0['Vopt'] = solver_info_0['Vopt_next']
-            #solver_info_0['marginopt'] = solver_info_0['marginopt_next']
-            #solver_info_0['is_inside_target'] = solver_info_0['is_inside_target_next']
+        control_0, solver_info_0 = self.solver_0.get_action(
+            obs=obs, controls=controls_initialize, state=state)
 
         solver_info_0['safe_opt_ctrl'] =  jnp.array(control_0)
         solver_info_0['task_ctrl'] = jnp.array(task_ctrl)
@@ -139,7 +128,7 @@ class iLQRSafetyFilter(BasePolicy):
                 solver_info_0['num_iters'] = 0
                 solver_info_0['deviation'] = np.linalg.norm(
                     control_0 - task_ctrl, ord=1)
-                solver_info_0['process_time'] = time.time() - start_time
+                solver_info_0['process_time'] = time.perf_counter() - start_time
                 if solver_info_0['is_inside_target']:
                     # Render the target set controlled invariant
                     return stopping_ctrl + solver_info_0['K_closed_loop'][:, :, 0] @ (initial_state - solver_info_0['states'][:, 0]), solver_info_0
@@ -155,7 +144,7 @@ class iLQRSafetyFilter(BasePolicy):
                     solver_info_1['states'])
                 solver_info_0['num_iters'] = 0
                 solver_info_0['deviation'] = 0
-                solver_info_0['process_time'] = time.time() - start_time
+                solver_info_0['process_time'] = time.perf_counter() - start_time
                 return task_ctrl, solver_info_0
         elif(self.filter_type == "CBF" or self.filter_type == "SoftCBF"):
             gamma = self.gamma
@@ -212,10 +201,10 @@ class iLQRSafetyFilter(BasePolicy):
                     # Controls improvement direction
                     # limits = np.array( [[self.dyn.ctrl_space[0, 0] - control_cbf_cand[0], self.dyn.ctrl_space[0, 1] - control_cbf_cand[0]],
                     #          [self.dyn.ctrl_space[1, 0] - control_cbf_cand[1], self.dyn.ctrl_space[1, 1] - control_cbf_cand[1]]] )
-                    #qcqp_start_time = time.time()
+                    #qcqp_start_time = time.perf_counter()
                     control_correction = barrier_filter_quadratic_two(
                         P, p, scaled_c, initialize=solver_initial, control_bias_term=control_bias_term)
-                    #qcqp_end_time = time.time()
+                    #qcqp_end_time = time.perf_counter()
                     #print(f"QCQP solver time: {qcqp_end_time - qcqp_start_time}")
                 elif self.constraint_type == 'linear':
                     control_correction = barrier_filter_linear(
@@ -264,7 +253,7 @@ class iLQRSafetyFilter(BasePolicy):
                 solver_info_0['deviation'] = np.linalg.norm(
                     control_cbf_cand - task_ctrl, ord=1)
                 solver_info_0['qcqp_initialize'] = control_cbf_cand - task_ctrl
-                solver_info_0['process_time'] = time.time() - start_time
+                solver_info_0['process_time'] = time.perf_counter() - start_time
                 # print(warmup, solver_info_0['process_time'])
                 # assert solver_info_0['process_time'] <= 0.1 or warmup
                 return control_cbf_cand.ravel() + solver_info_0['K_closed_loop'][:, :, 0] @ (initial_state - solver_info_0['states'][:, 0]), solver_info_0
@@ -292,6 +281,6 @@ class iLQRSafetyFilter(BasePolicy):
                 initial_state - solver_info_0['states'][:, 0])
 
         solver_info_0['qcqp_initialize'] = safety_control - task_ctrl
-        solver_info_0['process_time'] = time.time() - start_time
+        solver_info_0['process_time'] = time.perf_counter() - start_time
 
         return safety_control, solver_info_0

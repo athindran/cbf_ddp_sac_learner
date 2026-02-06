@@ -290,16 +290,16 @@ class Bicycle5D(BaseDynamics):
 
         return Bd
 
-    # @partial(jax.jit, static_argnames='self')
-    # def get_jacobian(
-    #     self, nominal_states: DeviceArray, nominal_controls: DeviceArray
-    # ) -> Tuple[DeviceArray, DeviceArray]:
-    #     jac = jax.jit(
-    #         jax.vmap(
-    #             self.get_jacobian_fx_fu, in_axes=(
-    #                 1, 1), out_axes=(
-    #                 2, 2)))
-    #     return jac(nominal_states, nominal_controls)
+    @partial(jax.jit, static_argnames='self')
+    def get_jacobian(
+        self, nominal_states: DeviceArray, nominal_controls: DeviceArray
+    ) -> Tuple[DeviceArray, DeviceArray]:
+        jac = jax.jit(
+            jax.vmap(
+                self.get_jacobian_fx_fu, in_axes=(
+                    1, 1), out_axes=(
+                    2, 2)))
+        return jac(nominal_states, nominal_controls)
 
     @partial(jax.jit, static_argnames='self')
     def get_jacobian_fx_fu(self, obs: DeviceArray,
