@@ -131,6 +131,8 @@ class BaseSingleEnv(BaseEnv):
         if self.penalize_safety_filter_active:
             safety_filtering_cost += -0.2 if solver_info['mark_barrier_filter'] else 0.0
             safety_filtering_cost +=  -0.3 if solver_info['mark_complete_filter'] else 0.0
+            info['mark_barrier_filter'] = solver_info['mark_barrier_filter']
+            info['mark_complete_filter'] = solver_info['mark_complete_filter']
 
         reward = float(reward_constraint + track_completion_reward + timeout_reward + safe_stop_reward + velocity_maintenance_reward + safety_filtering_cost)
 
@@ -556,6 +558,7 @@ class BaseSingleEnv(BaseEnv):
                 prev_ctrl = np.array([0.0, 0.0])                
                 done = False
                 episode_reward = 0
+                episode_num_filter_steps = 0
                 
                 while not done:
                     # center crop image
@@ -567,12 +570,14 @@ class BaseSingleEnv(BaseEnv):
 
                     obs, reward, done, INFO = self.step_with_sac_agent(np.array(action), solver_info)
                     episode_reward += reward
+                    episode_num_filter_steps += (INFO['mark_barrier_filter'] + INFO['mark_complete_filter'])
                     prev_ctrl = np.array( action )
                     prev_sol = solver_info
                     if 'reinit_controls' in solver_info.keys():
                         controls_initialize = np.array(solver_info['reinit_controls'])
 
                 L.log('eval/' + prefix + 'episode_reward', episode_reward, step)
+                L.log('eval/' + prefix + 'episode_num_filter_steps', episode_num_filter_steps, step)
                 all_ep_rewards.append(episode_reward)
             
             L.log('eval/' + prefix + 'eval_time', time.time()-start_time , step)
@@ -594,7 +599,7 @@ class BaseSingleEnv(BaseEnv):
         return
 
     def train_sac_agent(self, sac_agent, replay_buffer, L, args, max_episode_length, config_solver, verbose=True):
-        episode, episode_reward, done = 0, 0, True
+        episode, episode_reward, episode_num_filter_steps, done = 0, 0, 0, True
         reset_rejection_sampling_old = self.reset_rej_sampling
         self.reset_rej_sampling = False
         animate_dir = make_dir(os.path.join(args.work_dir, 'animations'))
@@ -646,6 +651,7 @@ class BaseSingleEnv(BaseEnv):
                 #if train_step % args.log_interval == 0:
                 if True:
                     L.log('train/episode_reward', episode_reward, train_step)
+                    L.log('train/episode_num_filter_steps', episode_num_filter_steps, train_step)
 
                 obs = self.reset()
 
@@ -655,6 +661,7 @@ class BaseSingleEnv(BaseEnv):
                 controls_initialize = None
                 done = False
                 episode_reward = 0
+                episode_num_filter_steps = 0
                 episode_step = 0
                 episode += 1
                 
@@ -692,6 +699,7 @@ class BaseSingleEnv(BaseEnv):
                 done
             )
             episode_reward += reward
+            episode_num_filter_steps += (step_info['mark_barrier_filter'] + step_info['mark_complete_filter'])
             replay_buffer.add(obs, action, reward, next_obs, done_bool)
 
             obs = np.array(next_obs)

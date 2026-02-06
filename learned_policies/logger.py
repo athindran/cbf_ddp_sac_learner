@@ -12,12 +12,14 @@ FORMAT_CONFIG = {
         'train': [
             ('episode', 'E', 'int'), ('step', 'S', 'int'), ('done_type', 'T', 'int'),
             ('duration', 'D', 'time'), ('episode_reward', 'R', 'float'),
+            ('episode_num_filter_steps', 'FS', 'float'),
             ('batch_reward', 'BR', 'float'), ('actor_loss', 'A_LOSS', 'float'),
             ('critic_loss', 'CR_LOSS', 'float'), ('curl_loss', 'CU_LOSS', 'float'),
             ('prediction_loss', 'P_LOSS', 'float'), ('reconstruction_loss', 'R_LOSS', 'float'),
             ('kl_loss', 'K_LOSS', 'float'),('contrastive_loss', 'CO_LOSS', 'float'),
         ],
-        'eval': [('step', 'S', 'int'), ('episode_reward', 'ER', 'float'),('perf_reward', 'PR', 'float'),('safe_reward', 'SR', 'float')]
+        'eval': [('step', 'S', 'int'), ('episode_reward', 'ER', 'float'),('perf_reward', 'PR', 'float'),('safe_reward', 'SR', 'float'), 
+                        ('episode_num_filter_steps', 'FS', 'float')]
     }
 }
 
@@ -144,12 +146,12 @@ class Logger(object):
         assert key.startswith('train') or key.startswith('eval')
         if type(value) == torch.Tensor:
             value = value.item()
-        if not isinstance(value, str) or key!='done_type':
-            self._try_sw_log(key, value / n, step)
+        if isinstance(value, str) or 'done_type' in key or 'episode_num_filter_steps' in key:
+            self._try_sw_log(key, value, step)
             mg = self._train_mg if key.startswith('train') else self._eval_mg
             mg.log(key, value, n)
         else:
-            self._try_sw_log(key, value, step)
+            self._try_sw_log(key, value / n, step)
             mg = self._train_mg if key.startswith('train') else self._eval_mg
             mg.log(key, value, n)
 
