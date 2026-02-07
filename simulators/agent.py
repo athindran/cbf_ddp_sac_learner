@@ -69,8 +69,10 @@ class Agent:
         self.agents_policy = {}
         self.agents_order = None
         self.is_task_ilqr = getattr(config, 'is_task_ilqr', False)
+        self.is_task_rl = getattr(config, 'is_task_rl', False)
         self.compute_evaluation_margin = True
         self.ticks = 357
+        self.seed = getattr(config, 'SEED', 21)
 
     def integrate_forward(
         self, state: np.ndarray, control: np.ndarray = None
@@ -113,9 +115,9 @@ class Agent:
         assert control is not None, (
             "You need to pass in a control!"
         )
-        self.ticks = self.ticks + 1
+        # self.ticks = self.ticks + 1
         return self.dyn.integrate_forward_with_noise(
-            state=state, control=control, seed = self.ticks
+            state=state, control=control, seed = self.seed
         )
 
     def get_dyn_jacobian(
@@ -142,6 +144,7 @@ class Agent:
         warmup: bool = False,
         prev_sol: Optional[Dict] = None, 
         prev_ctrl:np.ndarray = np.array([0.0, 0.0]), 
+        sample_stochastically: Optional[bool] = False,
         **kwargs
     ) -> Tuple[np.ndarray, dict]:
         """Gets the action to execute.
@@ -168,6 +171,11 @@ class Agent:
             # Execute task control
             if self.is_task_ilqr:
                 task_ctrl, _ = self.task_policy.get_action(obs=obs, controls=None, state=kwargs['state'], warmup=warmup)
+            elif self.is_task_rl:
+                if sample_stochastically:
+                    task_ctrl = self.task_policy.sample_action(obs)
+                else:
+                    task_ctrl = self.task_policy.select_action(obs)
             elif self.dyn.id ==  "PVTOL6D":
                 task_ctrl = self.task_policy(obs, self.dyn)
             else:
@@ -178,16 +186,26 @@ class Agent:
                 prev_sol=prev_sol, prev_ctrl=prev_ctrl, 
             )
         else:
-            _action, _solver_info = self.policy.get_action(  # Proposed action.
-                obs=obs, agents_action=agents_action, **kwargs
-            )
+            if sample_stochastically:
+                _action = self.policy.sample_action(obs)
+            else:
+                _action = self.policy.select_action(obs)
+
+            _solver_info = {
+                'process_time': 0.0,
+                'num_iters': 0,
+                'Vopt': -1,
+                'deviation': -1,
+
+            }
+
         _action_dict[self.id] = _action
 
         return _action, _solver_info
 
     def init_policy(
         self, policy_type: str, config, cost: Optional[BaseMargin] = None, 
-        evaluation_cost: Optional[BaseMargin] = None,
+        evaluation_cost: Optional[BaseMargin] = None, rl_task_policy = None,
         **kwargs
     ):
         self.policy_type = policy_type
@@ -202,8 +220,12 @@ class Agent:
             self.policy = iLQRReachability(
                 self.id, config, self.dyn, cost
             )
-        elif policy_type == "iLQRSafetyFilter":            
-            if self.is_task_ilqr:
+        elif policy_type == "SACPolicy":
+            self.policy = rl_task_policy
+        elif policy_type == "iLQRSafetyFilter":
+            if self.is_task_rl:
+                self.task_policy = rl_task_policy    
+            elif self.is_task_ilqr:
                 self.task_policy = iLQR(
                     self.id,
                     config,

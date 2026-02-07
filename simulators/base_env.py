@@ -40,6 +40,8 @@ class BaseEnv(gym.Env, ABC):
             np.ndarray: the new state.
         """
         self.cnt = 0
+        if self.agent.safety_policy is not None and self.agent.safety_policy.filter_type == 'SoftCBF':
+            self.agent.safety_policy.reset_metadata()
 
     @abstractmethod
     def render(self):

@@ -31,16 +31,17 @@ class BaseSingleEnv(BaseEnv):
         self.env_type = "single-agent"
 
         # Action Space.
-        action_space = np.array(config_agent.ACTION_RANGE, dtype=np.float32)
-        self.action_dim = action_space.shape[0]
-        self.action_dim_ctrl = action_space.shape[0]
-        self.agent = Agent(config_agent, action_space)
+        self.action_space_range = np.array(config_agent.ACTION_RANGE, dtype=np.float32)
+        self.action_dim = self.action_space_range.shape[0]
+        self.action_dim_ctrl = self.action_space_range.shape[0]
+        self.agent = Agent(config_agent, self.action_space_range)
         self.action_space = spaces.Box(
-            low=action_space[:, 0], high=action_space[:, 1]
+            low=self.action_space_range[:, 0], high=self.action_space_range[:, 1]
         )
         self.state_dim = self.agent.dyn.dim_x
 
         self.integrate_kwargs = getattr(config_env, "INTEGRATE_KWARGS", {})
+        self.penalize_safety_filter_active = getattr(config_env, "penalize_safety_filter_active", False)
         if "noise" in self.integrate_kwargs:
             if self.integrate_kwargs['noise'] is not None:
                 self.integrate_kwargs['noise'] = np.array(
@@ -81,7 +82,7 @@ class BaseSingleEnv(BaseEnv):
         return obs, cost, done, info
 
     def step_with_sac_agent(
-        self, action: np.ndarray
+        self, action: np.ndarray, solver_info: Dict
     ) -> Tuple[np.ndarray, float, bool, Dict]:
         """Implements the step function for the RL environment.
 
@@ -123,9 +124,19 @@ class BaseSingleEnv(BaseEnv):
         reward_constraint = -50.0 if (done and info['done_type'] == "failure") else 0.0
         track_completion_reward = 50.0 if (done and info['done_type'] == "leave_track_with_no_failure") else 0.0
         safe_stop_reward = -20.0 if (done and info['done_type'] == "safe_stop") else 0.0
-        timeout_reward = -5.0 if (done and info['done_type'] == "timeout") else 0.0
+        timeout_reward = obs[0] if (done and info['done_type'] == "timeout") else 0.0
+        velocity_maintenance_reward = -np.abs(obs[2] - 2.2)*0.005
+        safety_filtering_cost = 0.0
 
-        reward = float(reward_constraint + track_completion_reward + timeout_reward + safe_stop_reward)
+        if self.penalize_safety_filter_active:
+            safety_filtering_cost += -0.2 if solver_info['mark_barrier_filter'] else 0.0
+            safety_filtering_cost +=  -0.3 if solver_info['mark_complete_filter'] else 0.0
+
+        if 'mark_barrier_filter' in solver_info.keys():
+            info['mark_barrier_filter'] = solver_info['mark_barrier_filter']
+            info['mark_complete_filter'] = solver_info['mark_complete_filter']
+
+        reward = float(reward_constraint + track_completion_reward + timeout_reward + safe_stop_reward + velocity_maintenance_reward + safety_filtering_cost)
 
         return obs, reward, done, info
 
@@ -242,6 +253,9 @@ class BaseSingleEnv(BaseEnv):
                 "reward_history": rewards for every step.
                 "step_history": information for every step.
         """
+        reset_rejection_sampling_old = self.reset_rej_sampling
+        self.reset_rej_sampling = False
+
         # Stores the environment attributes and sets to rollout settings.
         timeout_backup = self.timeout
         end_criterion_backup = self.end_criterion
@@ -267,7 +281,11 @@ class BaseSingleEnv(BaseEnv):
         controls_initialize = None
 
         result = 0
-        obs = self.reset(**reset_kwargs)
+        if reset_kwargs is not None:
+            obs = self.reset(**reset_kwargs)
+        else:
+            obs = self.reset()
+
         state_history.append(self.state)
         obs_history.append(obs)
 
@@ -283,14 +301,14 @@ class BaseSingleEnv(BaseEnv):
             prev_ctrl = np.array( action )
             prev_sol = solver_info
 
-            if solver_info['mark_barrier_filter']:
+            if 'mark_barrier_filter' in solver_info.keys() and solver_info['mark_barrier_filter']:
                 barrier_filter_indices.append(t)
-            if solver_info['mark_complete_filter']:
+            if 'mark_complete_filter' in solver_info.keys() and solver_info['mark_complete_filter']:
                 complete_filter_indices.append(t)
 
             # Applies action: `done` and `info` are evaluated at the next
             # state.
-            obs, reward, done, step_info = self.step(action)
+            obs, reward, done, step_info = self.step_with_sac_agent(np.array(action), solver_info)
 
             # Executes step callback and stores historyory.
             state_history.append(self.state)
@@ -302,9 +320,16 @@ class BaseSingleEnv(BaseEnv):
             step_history.append(step_info)
             process_time_history.append(solver_info['process_time'])
             solver_iters_history.append(solver_info['num_iters'])
-            deviation_history.append(solver_info['deviation'])
-            safe_opt_history.append(solver_info['safe_opt_ctrl'])
-            task_ctrl_history.append(solver_info['task_ctrl'])
+
+            if self.agent.policy_type == "iLQRSafetyFilter":
+                deviation_history.append(solver_info['deviation'])
+                safe_opt_history.append(solver_info['safe_opt_ctrl'])
+                task_ctrl_history.append(solver_info['task_ctrl'])
+                controls_initialize = np.array(solver_info['reinit_controls'])
+            else:
+                deviation_history.append(np.zeros((2,)))
+                safe_opt_history.append(np.zeros((2,)))
+                task_ctrl_history.append(action) 
 
             if self.agent.compute_evaluation_margin:
                 _, margin_info = self.agent.evaluation_margin_solver.get_action(obs=np.array(self.state), state=np.array(self.state), 
@@ -352,8 +377,8 @@ class BaseSingleEnv(BaseEnv):
                         self, state_history, obs_history, action_history, plan_history, step_history, safety_plan=safety_plan, 
                                 barrier_filter_indices=barrier_filter_indices, complete_filter_indices=complete_filter_indices,
                     )
-            else:
-                safety_plan = np.asarray(solver_info['states'])
+            # else:
+            #     safety_plan = np.asarray(solver_info['states'])
 
             # Checks termination criterion.
             if done:
@@ -363,15 +388,15 @@ class BaseSingleEnv(BaseEnv):
                     result = -1
                 break
 
-            controls_initialize = np.array(solver_info['reinit_controls'])
 
         if rollout_episode_callback is not None:
+            filter_label = "none" if self.agent.safety_policy is None else self.agent.safety_policy.filter_type
             rollout_episode_callback(
                 self, state_history, obs_history, action_history, plan_history, step_history, value_history=value_history, process_time_history=process_time_history,
                 solver_iters_history=solver_iters_history, deviation_history=deviation_history, safety_metric_history=safety_metric_history,
                 safe_opt_history=safe_opt_history, task_ctrl_history=task_ctrl_history,
                 barrier_filter_indices=barrier_filter_indices, complete_filter_indices=complete_filter_indices,
-                label=self.agent.safety_policy.filter_type
+                label=filter_label,
             )
         # Reverts to training setting.
         self.timeout = timeout_backup
@@ -379,8 +404,13 @@ class BaseSingleEnv(BaseEnv):
         info = dict(
             obs_history=np.array(obs_history), action_history=np.array(action_history),
             plan_history=plan_history, reward_history=np.array(reward_history),
-            step_history=step_history
+            step_history=step_history, barrier_filter_indices=barrier_filter_indices, complete_filter_indices=complete_filter_indices,
         )
+
+        if self.agent.safety_policy is not None and self.agent.safety_policy.filter_type == 'SoftCBF':
+            self.agent.safety_policy.reset_metadata()
+
+        self.reset_rej_sampling = reset_rejection_sampling_old
 
         return np.array(state_history), result, info
 
@@ -398,57 +428,92 @@ class BaseSingleEnv(BaseEnv):
 
         for traj_indx in range(num_trajs):
             obs = self.reset()
+            prev_sol = None
+            controls_initialize = None
+            prev_ctrl = np.array([0.0, 0.0])     
             done = False
             episode_reward = 0
             obs_history = []
             action_history = []
             reward_history = []
             done_history = []
-            train_step = 0
+            sim_step = 0
             animate_dir_curr = os.path.join(animate_dir, f'traj_{traj_indx}')
             os.makedirs(animate_dir_curr, exist_ok=True)
             animate_prog_dir = os.path.join(animate_dir_curr, 'images')
             os.makedirs(animate_prog_dir, exist_ok=True)
             
             while not done:
-                if should_animate:
-                    fig = plt.figure()
-                    ax = plt.gca()
-
-                    ax.axis(self.visual_extent)
-                    ax.set_aspect('equal')
+                if should_animate and sim_step>0: 
+                    fig, axes = plt.subplots(
+                        3, 1, figsize=(8, 8)
+                    )
+                    axes[0].axis(self.visual_extent)
+                    axes[0].set_aspect('equal')
 
                     c_obs = 'k'
                     c_ego = 'c'
                     c_trace = 'k'
 
                     # track, obstacles, footprint
-                    self.render_obs(ax=ax, c=c_obs)  
-                    self.render_footprint(ax=ax, obs=obs, c=c_ego, lw=0.5)
+                    self.render_obs(ax=axes[0], c=c_obs)  
+                    self.render_footprint(ax=axes[0], obs=obs, c=c_ego, lw=0.5)
                     obs_history_numpy = np.array(obs_history)
                     if obs_history_numpy.size > 0:
-                        sc = ax.scatter(obs_history_numpy[:, 0], obs_history_numpy[:, 1], s=3, c=c_trace, marker='o')
+                        sc = axes[0].scatter(obs_history_numpy[:, 0], obs_history_numpy[:, 1], s=3, c=c_trace, marker='o')
+
+                    action_history_np = np.array(action_history)
+                    axes[1].plot(action_history_np[:, 0], 'k', alpha = 1.0, linewidth=1.0)
+                    axes[1].set_xlim([0, config_solver.MAX_ITER_RECEDING])
+                    axes[1].set_ylim([self.action_space_range[0, 0], self.action_space_range[0, 1]])
+                    nsteps = action_history_np.shape[0]
+                    
+                    axes[1].set_xticks(ticks=[], labels=[], fontsize=10)
+                    axes[1].set_yticks(ticks=[self.action_space_range[0, 0], self.action_space_range[0, 1]], 
+                                        labels=[self.action_space_range[0, 0], self.action_space_range[0, 1]], 
+                                        fontsize=10)
+                    # axes[1].set_xlabel('Time step', fontsize=10)
+                    axes[1].set_ylabel('Accel control', fontsize=10)
+                    axes[1].yaxis.set_label_coords(-0.04, 0.5)
+                    axes[1].xaxis.set_label_coords(0.5, -0.04)
+
+                    axes[2].plot(action_history_np[:, 1], 'k', alpha = 1.0, linewidth=1.0)
+                    axes[2].set_xlim([0, config_solver.MAX_ITER_RECEDING])
+                    axes[2].set_ylim([self.action_space_range[1, 0], self.action_space_range[1, 1]])
+                    axes[2].set_xticks(ticks=[0, round(nsteps, 2)], labels=[0, round(nsteps, 2)], fontsize=10)
+                    axes[2].set_yticks(ticks=[self.action_space_range[1, 0], self.action_space_range[1, 1]], 
+                                        labels=[self.action_space_range[1, 0], self.action_space_range[1, 1]], 
+                                        fontsize=10)
+                    #axes[2].set_xlabel('Time step', fontsize=10)
+                    axes[2].set_ylabel('Steer control', fontsize=10)
+                    axes[2].yaxis.set_label_coords(-0.04, 0.5)
+                    axes[2].xaxis.set_label_coords(0.5, -0.04)
 
                     fig.savefig(
                         os.path.join(animate_prog_dir,
-                            str(train_step) + ".png"), dpi=200, bbox_inches="tight"
+                            str(sim_step - 1) + ".png"), dpi=400, bbox_inches="tight"
                     )
                     plt.close('all')
 
                 # center crop image
                 with eval_mode(sac_agent):
-                    if sample_stochastically:
-                        action = sac_agent.sample_action(obs)
-                    else:
-                        action = sac_agent.select_action(obs)
+                    action, solver_info = self.agent.get_action(
+                        obs=obs, controls=controls_initialize,
+                        prev_sol=prev_sol, state=self.state, prev_ctrl=prev_ctrl,
+                        sample_stochastically=False,
+                    )
+                    prev_ctrl = np.array( action )
+                    prev_sol = solver_info
+                    if 'reinit_controls' in solver_info.keys():
+                        controls_initialize = np.array(solver_info['reinit_controls'])
 
-                obs, reward, done, step_info = self.step_with_sac_agent(action)
+                obs, reward, done, INFO = self.step_with_sac_agent(np.array(action), solver_info)
                 episode_reward += reward
                 obs_history.append(obs)
                 action_history.append(action)
                 reward_history.append(reward)
                 done_history.append(done)
-                train_step += 1
+                sim_step += 1
 
             if verbose:
                 print(f"--------------------RESULT----------------------")
@@ -462,18 +527,19 @@ class BaseSingleEnv(BaseEnv):
             if should_animate:
                 # region: Visualizes
                 gif_path = os.path.join(animate_dir_curr, 'rollout.gif')
-                frame_skip = 5
+                frame_skip = 10
                 with imageio.get_writer(gif_path, mode='I') as writer:
-                    for i in range(train_step - 1):
-                        if frame_skip != 1 and (i + 1) % frame_skip != 0:
+                    for i in range(sim_step - 1):
+                        if frame_skip != 1 and i % frame_skip != 0:
                             continue
                         filename = os.path.join(
-                            animate_prog_dir, str(i + 1) + ".png")
+                            animate_prog_dir, str(i) + ".png")
                         image = imageio.imread(filename)
                         writer.append_data(image)
                         #Image(open(gif_path, 'rb').read(), width=400)
                 # endregion
 
+        self.reset()
         self.reset_rej_sampling = reset_rejection_sampling_old
 
         return obs_history, action_history, reward_history, done_history
@@ -488,21 +554,32 @@ class BaseSingleEnv(BaseEnv):
             prefix = 'stochastic_' if sample_stochastically else ''
             for i in range(num_episodes):
                 obs = self.reset()
+                prev_sol = None
+                margin_initializer = None
+                controls_initialize = None
+                prev_ctrl = np.array([0.0, 0.0])                
                 done = False
                 episode_reward = 0
+                episode_num_filter_steps = 0
                 
                 while not done:
                     # center crop image
                     with eval_mode(sac_agent):
-                        if sample_stochastically:
-                            action = sac_agent.sample_action(obs)
-                        else:
-                            action = sac_agent.select_action(obs)
+                        action, solver_info = self.agent.get_action(
+                            obs=obs, controls=controls_initialize,
+                            prev_sol=prev_sol, state=self.state, prev_ctrl=prev_ctrl
+                        )
 
-                    obs, reward, done, INFO = self.step_with_sac_agent(action)
+                    obs, reward, done, INFO = self.step_with_sac_agent(np.array(action), solver_info)
                     episode_reward += reward
+                    episode_num_filter_steps += (INFO['mark_barrier_filter'] + INFO['mark_complete_filter'])
+                    prev_ctrl = np.array( action )
+                    prev_sol = solver_info
+                    if 'reinit_controls' in solver_info.keys():
+                        controls_initialize = np.array(solver_info['reinit_controls'])
 
                 L.log('eval/' + prefix + 'episode_reward', episode_reward, step)
+                L.log('eval/' + prefix + 'episode_num_filter_steps', episode_num_filter_steps, step)
                 all_ep_rewards.append(episode_reward)
             
             L.log('eval/' + prefix + 'eval_time', time.time()-start_time , step)
@@ -513,18 +590,31 @@ class BaseSingleEnv(BaseEnv):
 
         run_eval_loop(sample_stochastically=False)
         L.dump(step)
-
+        self.reset()
+                    
+        prev_sol = None
+        margin_initializer = None
+        prev_ctrl = np.array([0.0, 0.0])
+  
         self.reset_rej_sampling = reset_rejection_sampling_old
 
         return
 
     def train_sac_agent(self, sac_agent, replay_buffer, L, args, max_episode_length, config_solver, verbose=True):
-        episode, episode_reward, done = 0, 0, True
+        episode, episode_reward, episode_num_filter_steps, done = 0, 0, 0, True
         reset_rejection_sampling_old = self.reset_rej_sampling
         self.reset_rej_sampling = False
         animate_dir = make_dir(os.path.join(args.work_dir, 'animations'))
         model_dir = make_dir(os.path.join(args.work_dir, 'model'))
         buffer_dir = make_dir(os.path.join(args.work_dir, 'buffer'))
+
+        done_type_log_map = {
+            'leave_track_with_no_failure': 0,
+            'not_raised': 1,
+            'timeout': 2,
+            'safe_stop': 3,
+            'failure': 4,
+        }
 
         with open(os.path.join(args.work_dir, 'args.json'), 'w') as f:
             json.dump(vars(args), f, sort_keys=True, indent=4)
@@ -544,6 +634,7 @@ class BaseSingleEnv(BaseEnv):
                 if train_step > 0:
                     if True:
                         L.log('train/duration', time.time() - start_time, train_step)
+                        L.log('train/done_type', int(done_type_log_map[step_info['done_type']]), train_step)
                         L.dump(train_step)
                     if verbose:
                         print(f"--------------------RESULT: ----------------------")
@@ -558,15 +649,21 @@ class BaseSingleEnv(BaseEnv):
                             T_rollout=max_episode_length, end_criterion='failure', sac_agent=sac_agent, verbose=verbose, num_trajs=2,
                                 sample_stochastically=False, should_animate=True, animate_dir=animate_dir + '_' + str(train_step), config_solver=config_solver,
                             )
-
-                    start_time = time.time()
+                    # start_time = time.time()
                 #if train_step % args.log_interval == 0:
                 if True:
                     L.log('train/episode_reward', episode_reward, train_step)
-               
+                    L.log('train/episode_num_filter_steps', episode_num_filter_steps, train_step)
+
                 obs = self.reset()
+
+                prev_sol = None
+                margin_initializer = None
+                prev_ctrl = np.array([0.0, 0.0])
+                controls_initialize = None
                 done = False
                 episode_reward = 0
+                episode_num_filter_steps = 0
                 episode_step = 0
                 episode += 1
                 
@@ -577,9 +674,19 @@ class BaseSingleEnv(BaseEnv):
             # sample action for data collection
             if train_step < args.init_steps:
                 action = self.action_space.sample()
+                solver_info = {'mark_barrier_filter': False, 'mark_complete_filter': False}
             else:
                 with eval_mode(sac_agent):
-                    action = sac_agent.sample_action(obs)
+                    action, solver_info = self.agent.get_action(
+                        obs=obs, controls=controls_initialize,
+                        prev_sol=prev_sol, state=self.state, prev_ctrl=prev_ctrl,
+                        sample_stochastically=True,
+                    )
+                    prev_ctrl = np.array( action )
+                    prev_sol = solver_info
+                    if 'reinit_controls' in solver_info.keys():
+                        controls_initialize = np.array(solver_info['reinit_controls'])
+
 
             # run training update
             if train_step >= args.init_steps:
@@ -587,17 +694,24 @@ class BaseSingleEnv(BaseEnv):
                 for _ in range(num_updates):
                     sac_agent.update(replay_buffer, L, train_step)
 
-            next_obs, reward, done, step_info = self.step_with_sac_agent(action)
-    
+            next_obs, reward, done, step_info = self.step_with_sac_agent(np.array(action), solver_info)
+
             # allow infinity bootstrap
             done_bool = 0 if episode_step + 1 == max_episode_length else float(
                 done
             )
             episode_reward += reward
+            episode_num_filter_steps += (step_info['mark_barrier_filter'] + step_info['mark_complete_filter'])
             replay_buffer.add(obs, action, reward, next_obs, done_bool)
 
             obs = np.array(next_obs)
             episode_step += 1
+        
+        # Save model at end of training.
+        if args.save_model:
+            sac_agent.save(model_dir, train_step)
+        if args.save_buffer:
+            replay_buffer.save(buffer_dir)
 
         self.reset_rej_sampling = reset_rejection_sampling_old
 

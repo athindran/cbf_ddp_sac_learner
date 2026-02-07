@@ -18,6 +18,50 @@ def find_fluctuation(controls, time_delta):
     std_y_fluctuation = np.std( y_fluctuation )
     return [mean_x_fluctuation, mean_y_fluctuation, std_x_fluctuation, std_y_fluctuation]
 
+
+def plot_bic_run_summary_mul_seeds_miniplot(axes, env, states, barrier_filter_indices, complete_filter_indices, run_type):
+    c_obs = 'k'
+    c_ego = 'c'
+
+    colorlist = {
+        'none': 'k',
+        'SoftCBF_penalty': 'b',
+        'SoftCBF' : 'r'
+    }
+
+    labellist = {
+        'none': 'Training with no safety filter',
+        'SoftCBF_penalty': 'Training with softCBF (w filter cost)',
+        'SoftCBF': 'Training with softCBF (w/o filter cost)'
+    }
+
+    env.render_obs(ax=axes, c=c_obs)
+    axes.axis(env.visual_extent)
+    axes.set_aspect('equal')
+    
+    sc = axes.plot(
+        states[:, 0], states[:, 1], c=colorlist[run_type], alpha = 1.0, 
+        label=labellist[run_type], linewidth=1.0, linestyle='solid'
+    )
+
+    if len(complete_filter_indices)>0:
+        axes.plot(states[complete_filter_indices, 0], 
+                states[complete_filter_indices, 1], 'D', 
+                color='k', alpha=0.65, markersize=2.5)
+
+    if len(barrier_filter_indices)>0:
+        axes.plot(states[barrier_filter_indices, 0], states[barrier_filter_indices, 1], 'x', 
+                    color='k', alpha=0.65, markersize=2.5)
+
+    axes.set_xticks(ticks=[0, 14], labels=[0, 14], fontsize=10)
+    axes.set_yticks(ticks=[-3, 3], labels=[-3, 3], fontsize=10)
+    axes.set_ylim([-3.2, 3.2])
+    axes.set_xlim([0.0, 14.0])
+    axes.set_xlabel('X position', fontsize=12)
+    axes.set_ylabel('Y position', fontsize=12)
+    axes.yaxis.set_label_coords(-0.04, 0.5)
+    axes.xaxis.set_label_coords(0.5, -0.04)
+
 def plot_bic_run_summary(dyn_id, env, obs_history, action_history, config_solver, config_agent, 
                      fig_folder="./", **kwargs):
     c_obs = 'k'
@@ -118,6 +162,8 @@ def plot_bic_run_summary(dyn_id, env, obs_history, action_history, config_solver
     plt.xlabel('Time step')
     fig.savefig(os.path.join(fig_folder, "auxiliary_cbfiters.png"), dpi=200)
 
+    plt.close('all')
+
 
 def plot_pvtol_run_summary(dyn_id, env, obs_history, action_history, config_solver, config_agent, 
                      fig_folder="./", **kwargs):
@@ -210,6 +256,8 @@ def plot_pvtol_run_summary(dyn_id, env, obs_history, action_history, config_solv
     plt.ylabel('Solver iterations')
     plt.xlabel('Time step')
     fig.savefig(os.path.join(fig_folder, "auxiliary_cbfiters.png"), dpi=200)
+
+    plt.close('all')
 
     
 def plot_run_summary(dyn_id, env, obs_history, action_history, config_solver, config_agent, 
@@ -813,10 +861,10 @@ def make_bicycle_comparison_report(prefix="./exps_may/ilqr/bic5D/yaw_testing/", 
 
     ax_st = subfigs_col2[2]
 
-    if 'reachability' in tag:
+    if config_cost.COST_TYPE == 'Reachability':
         max_value = 0.04
         upper_limit = 0.1
-    else:
+    elif config_cost.COST_TYPE == 'Reachavoid':
         max_value = 0.05
         upper_limit = 1.0
 
@@ -854,6 +902,8 @@ def make_bicycle_comparison_report(prefix="./exps_may/ilqr/bic5D/yaw_testing/", 
             plot_folder + tag + str(hide_label) + "_jax.png", dpi=400, 
             bbox_inches='tight', transparent=hide_label
         )
+    
+    plt.close('all')
 
     print("Reporting stats")
     for idx, controls_data in enumerate(plot_actions_list):
@@ -1267,6 +1317,8 @@ def make_pvtol_comparison_report(prefix="./exps_may/ilqr/bic5D/yaw_testing/", pl
             plot_folder + tag + str(hide_label) + "_jax.png", dpi=400, 
             bbox_inches='tight', transparent=hide_label
         )
+
+    plt.close('all')
 
     print("Reporting stats")
     for idx, controls_data in enumerate(plot_actions_list):

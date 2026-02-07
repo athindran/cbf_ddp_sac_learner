@@ -4,7 +4,9 @@ import torch
 from summary.utils import(
     make_animation_plots,
     make_bicycle_comparison_report,
-    plot_run_summary)
+    plot_run_summary,
+    plot_bic_run_summary_mul_seeds_miniplot,
+    )
 from simulators import(
     load_config,
     CarSingleEnv,
@@ -20,6 +22,7 @@ from learned_policies import(
     ReplayBuffer)
 import jax
 from shutil import copyfile
+from matplotlib import pyplot as plt
 import argparse
 import imageio
 import copy
@@ -42,17 +45,17 @@ def parse_args():
     parser.add_argument('--replay_buffer_capacity', default=2000000, type=int)
     # train
     parser.add_argument('--agent', default='curl_sac', type=str)
-    parser.add_argument('--init_steps', default=1000, type=int)
+    parser.add_argument('--init_steps', default=10, type=int)
     parser.add_argument('--num_train_steps', default=230000, type=int)
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--hidden_dim', default=256, type=int)
     # eval
     parser.add_argument('--eval_freq', default=100, type=int)
-    parser.add_argument('--num_eval_episodes', default=40, type=int)
+    parser.add_argument('--num_eval_episodes', default=20, type=int)
     # critic
     parser.add_argument('--critic_lr', default=5e-5, type=float)
     parser.add_argument('--critic_beta', default=0.9, type=float)
-    parser.add_argument('--critic_tau', default=0.01, type=float) # try 0.05 or 0.1
+    parser.add_argument('--critic_tau', default=0.05, type=float) # try 0.05 or 0.1
     parser.add_argument('--critic_target_update_freq', default=2, type=int) # try to change it to 1 and retain 0.01 above
     # actor
     parser.add_argument('--actor_lr', default=5e-5, type=float)
@@ -72,17 +75,21 @@ def parse_args():
     # sac
     parser.add_argument('--discount', default=0.99, type=float)
     parser.add_argument('--init_temperature', default=0.1, type=float)
-    parser.add_argument('--alpha_lr', default=1e-5, type=float)
+    parser.add_argument('--alpha_lr', default=5e-6, type=float)
     parser.add_argument('--alpha_beta', default=0.5, type=float)
     # misc
     parser.add_argument('--seed', default=12, type=int)
     parser.add_argument('--work_dir', default='/Users/athindranrameshkumar/Documents/Code/cbf_ddp_sac_learner/model_store', type=str)
     parser.add_argument('--load_dir', default='None', type=str)
     parser.add_argument('--load_index', default=0, type=str)
-    parser.add_argument('--save_tb', default=False, action='store_true')
+    parser.add_argument('--save_tb', default=True, action='store_true')
     parser.add_argument('--save_buffer', default=True, action='store_true')
     parser.add_argument('--save_model', default=True, action='store_true')
     parser.add_argument('--log_interval', default=500, type=int)
+    parser.add_argument('--training_mode', default=False, action='store_true')
+    parser.add_argument('--penalize_safety_filter_active', default=False, action='store_true')
+    parser.add_argument('--miniplot', default=False, action='store_true')
+    parser.add_argument('--plot_tag', default='invalid', type=str)
 
     parser.add_argument(
         "-cf",
@@ -111,6 +118,7 @@ def parse_args():
         dest='naive_task',
         action='store_false')
     parser.add_argument('--should_animate', dest='should_animate', action='store_true')
+    parser.add_argument('--filter_type', help='Choose any/whether safety filter', type=str, default="none")
     parser.set_defaults(naive_task=False)
     
     args = parser.parse_args()
@@ -141,7 +149,99 @@ def make_sac_agent(obs_shape, action_shape, args, device):
     )
 
 
-def main(config_file, road_boundary, filter_type, is_task_ilqr, line_search, stopping_computation='rollout'):
+def main(config_file, road_boundary, filter_type, is_task_ilqr, is_task_rl, 
+            line_search, stopping_computation='rollout'):
+    # Callback after each timestep for plotting and summarizing evaluation
+    def rollout_step_callback(
+            env: CarSingleEnv,
+            state_history,
+            obs_history,
+            action_history,
+            plan_history,
+            step_history,
+            *args,
+            **kwargs):
+        solver_info = plan_history[-1]
+        states = np.asarray(state_history).T  # last one is the next state.
+        action_history = np.asarray(action_history)
+        make_animation_plots(
+            env,
+            obs_history,
+            action_history,
+            solver_info,
+            kwargs['safety_plan'],
+            config_solver,
+            config_agent,
+            np.asarray(kwargs['barrier_filter_indices']),
+            np.asarray(kwargs['complete_filter_indices']),
+            fig_prog_folder)
+
+        if config_solver.FILTER_TYPE == "none":
+            print(
+                "[{}]: solver returns status {}, cost {:.1e}, and uses {:.3f}.".format(
+                    states.shape[1] - 1,
+                    solver_info['status'],
+                    solver_info['Vopt'],
+                    solver_info['t_process']),
+                end=' -> ')
+        else:
+            print(
+                "[{}]: solver returns status {}, Vopt {:.1e}, future Vopt {:.1e}, marginopt {:.1e}, future marginopt {:.1e}, and uses {:.3f}.".format(
+                    states.shape[1] - 1,
+                    solver_info['status'],
+                    solver_info['Vopt'],
+                    solver_info['Vopt_next'],
+                    solver_info['marginopt'],
+                    solver_info['marginopt_next'],
+                    solver_info['process_time']))
+            # Turn off QCQP solver if it stalls.
+            #assert solver_info['process_time']<0.09
+    
+    # Callback after episode for plotting and summarizing evaluation
+    def rollout_episode_callback(
+            env,
+            state_history,
+            obs_history,
+            action_history,
+            plan_history,
+            step_history,
+            *args,
+            **kwargs):
+        # plot_run_summary(
+        #     dyn_id,
+        #     env,
+        #     obs_history,
+        #     action_history,
+        #     config_solver,
+        #     config_agent,
+        #     fig_folder,
+        #     **kwargs)
+        save_dict = {
+            'states': state_history,
+            'obses': obs_history,
+            'actions': action_history,
+            "values": kwargs["value_history"],
+            "process_times": kwargs["process_time_history"],
+            "barrier_indices": kwargs["barrier_filter_indices"],
+            "complete_indices": kwargs["complete_filter_indices"],
+            'deviation_history': kwargs['deviation_history'],
+            'safety_metrics': kwargs['safety_metric_history'],
+            'safe_opt_history': kwargs['safe_opt_history'],
+            'task_ctrl_history': kwargs['task_ctrl_history']}
+        save_dict_str = os.path.join(fig_folder, "save_data.npy")
+        print(f"Saving to: {save_dict_str}")
+        np.save(save_dict_str, save_dict)
+
+        solver_info = plan_history[-1]
+        if config_solver.FILTER_TYPE != "none":
+            print(
+                "\n\n --> Barrier filtering performed at {:.3f} steps.".format(
+                    solver_info['barrier_filter_steps']))
+            print(
+                "\n\n --> Complete filtering performed at {:.3f} steps.".format(
+                    solver_info['filter_steps']))
+
+
     args = parse_args()
     if args.seed == -1: 
         args.__dict__["seed"] = np.random.randint(1,1000000)
@@ -152,8 +252,12 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, line_search, sto
     config_env = config['environment']
     config_agent = config['agent']
     config_solver = config['solver']
+    config_env.penalize_safety_filter_active = args.penalize_safety_filter_active
+    config_env.SEED = args.seed
+    config_agent.SEED = args.seed
     config_solver.LINE_SEARCH = line_search
-    config_agent.is_task_ilqr = False
+    config_agent.is_task_ilqr = is_task_ilqr
+    config_agent.is_task_rl = is_task_rl
     config_solver.FILTER_TYPE = filter_type
     config_agent.FILTER_TYPE = filter_type
 
@@ -195,10 +299,13 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, line_search, sto
     config_solver.COST_TYPE = config_cost.COST_TYPE
     if config_cost.COST_TYPE == "Reachavoid":
         if config_solver.FILTER_TYPE == "none":
-            policy_type = "iLQRReachAvoid"
+            policy_type = "SACPolicy"
             cost = BicycleReachAvoidMargin(
                 config_ilqr_cost, copy.deepcopy(env.agent.dyn), filter_type)
+            evaluation_cost = BicycleReachAvoidMargin(
+                config_ilqr_cost, copy.deepcopy(env.agent.dyn), 'SoftCBF')
             env.cost = cost
+            task_cost = None
         else:
             policy_type = "iLQRSafetyFilter"
             task_cost = BicycleCost(
@@ -212,10 +319,13 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, line_search, sto
             env.cost = cost
     elif config_cost.COST_TYPE == "Reachability":
         if config_solver.FILTER_TYPE == "none":
-            policy_type = "iLQRReachability"
+            policy_type = "SACPolicy"
             cost = BicycleReachAvoidMargin(
                 config_ilqr_cost, copy.deepcopy(env.agent.dyn), filter_type)
+            evaluation_cost = BicycleReachAvoidMargin(
+                config_ilqr_cost, copy.deepcopy(env.agent.dyn), 'SoftCBF')
             env.cost = cost
+            task_cost = None
         else:
             policy_type = "iLQRSafetyFilter"
             task_cost = BicycleCost(
@@ -228,28 +338,22 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, line_search, sto
                 config_ilqr_cost, copy.deepcopy(env.agent.dyn), 'SoftCBF')
             env.cost = cost
 
-    env.agent.init_policy(
-        policy_type=policy_type,
-        config=config_solver,
-        cost=cost,
-        evaluation_cost=evaluation_cost,
-        task_cost=task_cost)
-    max_iter_receding = config_solver.MAX_ITER_RECEDING
-
-    # region: Runs iLQR
-    # Warms up jit
-    env.agent.get_action(obs=x_cur, state=x_cur, warmup=True)
-    env.report()
-
     # make directory
-    ts = time.gmtime() 
-    ts = time.strftime("%m-%d-%s", ts)    
-    env_name = 'racecar_safety-debug' + str(ts)
-
-    args.work_dir = os.path.join(args.work_dir, env_name)
-    os.makedirs(args.work_dir, exist_ok=True)
-    model_dir = make_dir(os.path.join(args.work_dir, 'model'))
-    buffer_dir = make_dir(os.path.join(args.work_dir, 'buffer'))
+    if args.training_mode:
+        ts = time.gmtime() 
+        ts = time.strftime("%m-%d-%s", ts)    
+        env_name = 'racecar_safety-debug-tests' + str(ts)
+        args.work_dir = os.path.join(args.work_dir, env_name)
+        os.makedirs(args.work_dir, exist_ok=True)
+        model_dir = make_dir(os.path.join(args.work_dir, 'model'))
+        buffer_dir = make_dir(os.path.join(args.work_dir, 'buffer'))
+        sim_images_dir = os.path.join(args.work_dir, 'sim_images')
+        os.makedirs(sim_images_dir, exist_ok=True)
+    else:
+        model_dir = make_dir(os.path.join(args.load_dir, 'model'))
+        buffer_dir = make_dir(os.path.join(args.load_dir, 'buffer'))
+        sim_images_dir = os.path.join(args.load_dir, 'sim_images')
+        os.makedirs(sim_images_dir, exist_ok=True)
 
     with open(os.path.join(args.work_dir, 'args.json'), 'w') as f:
         json.dump(vars(args), f, sort_keys=True, indent=4)
@@ -274,22 +378,126 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, line_search, sto
         device=device
     )
 
-    # Load model
-    # sac_agent.load(model_dir='/Users/athindranrameshkumar/Documents/Code/cbf_ddp_sac_learner/model_store/racecar_safety-debug01-26-1769489934/model/',
-    #                step=279304)
+    env.agent.init_policy(
+        policy_type=policy_type,
+        config=config_solver,
+        cost=cost,
+        evaluation_cost=evaluation_cost,
+        task_cost=task_cost,
+        rl_task_policy=sac_agent)
 
+    max_iter_receding = config_solver.MAX_ITER_RECEDING
+
+    # region: Runs iLQR
+    # Warms up jit
+    env.agent.get_action(obs=x_cur, state=x_cur, warmup=True)
+    env.report()
     L = Logger(args.work_dir, use_tb=args.save_tb)
 
-    animate_dir = os.path.join(args.work_dir, 'animate')
+    if args.training_mode:
+        env.train_sac_agent(sac_agent, replay_buffer, L, args, max_episode_length=max_iter_receding,  config_solver=config_solver, verbose=False)
+        env.evaluate_sac_agent(sac_agent, args.num_eval_episodes, L, args.num_train_steps, args)
+    else:
+        # Load model
+        sac_agent.load(model_dir=model_dir,
+                    step=args.load_index)
+        sim_images_dir = os.path.join(args.load_dir, 'sim_images')
+    # obs_history, action_history, reward_history, done_history = env.simulate_trajectory_with_sac_agent(
+    #      T_rollout=max_iter_receding, end_criterion='failure', sac_agent=sac_agent, verbose=True, num_trajs=10,
+    #      sample_stochastically=False, should_animate=True, animate_dir=animate_dir, config_solver=config_solver,
+    # )
 
-    env.train_sac_agent(sac_agent, replay_buffer, L, args, max_episode_length=max_iter_receding,  config_solver=config_solver, verbose=False)
-    #env.evaluate_sac_agent(sac_agent, 40, L, 0, args)
+    # Works only with SoftCBF filters now.
+    should_animate = False
 
-    obs_history, action_history, reward_history, done_history = env.simulate_trajectory_with_sac_agent(
-         T_rollout=max_iter_receding, end_criterion='failure', sac_agent=sac_agent, verbose=True, num_trajs=10,
-         sample_stochastically=False, should_animate=True, animate_dir=animate_dir, config_solver=config_solver,
-    )
+    miniplot = args.miniplot
 
+    if miniplot:
+        fig = plt.figure(figsize=(4.0, 2.0))
+        axes = plt.gca()
+        run_type = str(args.filter_type)
+        if args.penalize_safety_filter_active:
+            run_type += '_penalty'
+
+    for traj_indx in range(20):
+        sim_images_dir_per_traj = os.path.join(sim_images_dir, f'traj_{traj_indx}/')
+        current_sim_images_dir = os.path.join(sim_images_dir_per_traj,
+            "road_boundary=" + str(road_boundary))
+        current_sim_images_dir = os.path.join(current_sim_images_dir, args.filter_type)
+        os.makedirs(current_sim_images_dir, exist_ok=True)
+
+        copyfile(
+            config_file,
+            os.path.join(
+                current_sim_images_dir,
+                'config.yaml'))
+        sys.stdout = PrintLogger(
+            os.path.join(
+                current_sim_images_dir,
+                'log.txt'))
+        sys.stderr = PrintLogger(
+            os.path.join(
+                current_sim_images_dir,
+                'log.txt'))
+
+        fig_folder = os.path.join(current_sim_images_dir, "figure")
+        fig_prog_folder = os.path.join(fig_folder, "progress")
+        os.makedirs(fig_prog_folder, exist_ok=True)
+
+        jax.clear_caches()
+        # Warmup again
+        env.agent.get_action(obs=x_cur, state=x_cur, warmup=True)
+
+        nominal_states, result, traj_info = env.simulate_one_trajectory(
+            T_rollout=max_iter_receding, end_criterion='failure',
+            rollout_step_callback=rollout_step_callback,
+            rollout_episode_callback=rollout_episode_callback,
+            advanced_animate=should_animate,
+        )
+
+        print(f"--------------------RESULT: {result}----------------------")
+        print(traj_info['step_history'][-1]["done_type"])
+        constraints: Dict = traj_info['step_history'][-1]['constraints']
+        for k, v in constraints.items():
+            print(f"{k}: {v[0, 1]:.1e}")
+        print("-----------------------------------------------------------")
+        
+        if should_animate:
+            # region: Visualizes
+            gif_path = os.path.join(fig_folder, 'rollout.gif')
+            frame_skip = 10
+            with imageio.get_writer(gif_path, mode='I') as writer:
+                for i in range(len(nominal_states) - 1):
+                    if frame_skip != 1 and (i + 1) % frame_skip != 0:
+                        continue
+                    filename = os.path.join(
+                        fig_prog_folder, str(i + 1) + ".png")
+                    image = imageio.imread(filename)
+                    writer.append_data(image)
+                    #Image(open(gif_path, 'rb').read(), width=400)
+            # endregion
+
+        if not miniplot:
+            if args.filter_type == 'SoftCBF':
+                make_bicycle_comparison_report(
+                    sim_images_dir_per_traj,
+                    plot_folder=f'./sac_safety_filter_summary_rollout_{args.seed}_{args.line_search}-{args.stopping_computation}/',
+                    tag=plot_tag + "_" + str(args.road_boundary) + "_sim_index_" + str(traj_indx) + "_",
+                    road_boundary=args.road_boundary,
+                    dt=config_agent.DT,
+                    cbf_gamma=config_solver.CBF_GAMMA,
+                    soft_cbf_gamma=config_solver.SOFT_CBF_GAMMA,
+                    filters=['SoftCBF'])
+        else:
+            plot_bic_run_summary_mul_seeds_miniplot(axes, env, nominal_states, traj_info['barrier_filter_indices'], traj_info['complete_filter_indices'], run_type)
+
+    if miniplot:
+        plot_folder = f'./sac_safety_filter_summary_rollout_{args.seed}_{args.line_search}-{args.stopping_computation}'
+        os.makedirs(plot_folder, exist_ok=True)
+        plt.savefig(f'./sac_safety_filter_summary_rollout_{args.seed}_{args.line_search}-{args.stopping_computation}/test_{run_type}_{args.plot_tag}.png', 
+                    bbox_inches='tight', dpi=400)
+        plt.savefig(f'./sac_safety_filter_summary_rollout_{args.seed}_{args.line_search}-{args.stopping_computation}/test_{run_type}_{args.plot_tag}.pdf', 
+            bbox_inches='tight', dpi=400)
 
 if __name__ == '__main__':
     torch.multiprocessing.set_start_method('spawn')
@@ -297,6 +505,6 @@ if __name__ == '__main__':
     
     out_folder, plot_tag, config_agent = None, None, None
     jax.clear_caches()
-    main(args.config_file, args.road_boundary, filter_type='SoftCBF', is_task_ilqr=(not args.naive_task),         
+    main(args.config_file, args.road_boundary, filter_type=args.filter_type, is_task_ilqr=False, is_task_rl=True,         
                                                 line_search=args.line_search,
                                                 stopping_computation=args.stopping_computation)

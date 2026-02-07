@@ -10,14 +10,16 @@ from termcolor import colored
 FORMAT_CONFIG = {
     'rl': {
         'train': [
-            ('episode', 'E', 'int'), ('step', 'S', 'int'),
+            ('episode', 'E', 'int'), ('step', 'S', 'int'), ('done_type', 'T', 'int'),
             ('duration', 'D', 'time'), ('episode_reward', 'R', 'float'),
+            ('episode_num_filter_steps', 'FS', 'float'),
             ('batch_reward', 'BR', 'float'), ('actor_loss', 'A_LOSS', 'float'),
             ('critic_loss', 'CR_LOSS', 'float'), ('curl_loss', 'CU_LOSS', 'float'),
             ('prediction_loss', 'P_LOSS', 'float'), ('reconstruction_loss', 'R_LOSS', 'float'),
             ('kl_loss', 'K_LOSS', 'float'),('contrastive_loss', 'CO_LOSS', 'float'),
         ],
-        'eval': [('step', 'S', 'int'), ('episode_reward', 'ER', 'float'),('perf_reward', 'PR', 'float'),('safe_reward', 'SR', 'float')]
+        'eval': [('step', 'S', 'int'), ('episode_reward', 'ER', 'float'),('perf_reward', 'PR', 'float'),('safe_reward', 'SR', 'float'), 
+                        ('episode_num_filter_steps', 'FS', 'float')]
     }
 }
 
@@ -28,11 +30,18 @@ class AverageMeter(object):
         self._count = 0
 
     def update(self, value, n=1):
-        self._sum += value
-        self._count += n
+        if isinstance(value, str):
+            self._sum = value
+            self._count = 1
+        else:
+            self._sum += value
+            self._count += n
 
     def value(self):
-        return self._sum / max(1, self._count)
+        if isinstance(self._sum, str):
+            return self._sum
+        else:
+            return self._sum / max(1, self._count)
 
 
 class MetersGroup(object):
@@ -87,7 +96,7 @@ class MetersGroup(object):
         data = self._prime_meters()
         data['step'] = step
         self._dump_to_file(data)
-        self._dump_to_console(data, prefix)
+        # self._dump_to_console(data, prefix)
         self._meters.clear()
 
 
@@ -112,7 +121,10 @@ class Logger(object):
 
     def _try_sw_log(self, key, value, step):
         if self._sw is not None:
-            self._sw.add_scalar(key, value, step)
+            if isinstance(value, str):
+                self._sw.add_text(key, value, step)
+            else:
+                self._sw.add_scalar(key, value, step)
 
     def _try_sw_log_image(self, key, image, step):
         if self._sw is not None:
@@ -134,9 +146,14 @@ class Logger(object):
         assert key.startswith('train') or key.startswith('eval')
         if type(value) == torch.Tensor:
             value = value.item()
-        self._try_sw_log(key, value / n, step)
-        mg = self._train_mg if key.startswith('train') else self._eval_mg
-        mg.log(key, value, n)
+        if isinstance(value, str) or 'done_type' in key or 'episode_num_filter_steps' in key:
+            self._try_sw_log(key, value, step)
+            mg = self._train_mg if key.startswith('train') else self._eval_mg
+            mg.log(key, value, n)
+        else:
+            self._try_sw_log(key, value / n, step)
+            mg = self._train_mg if key.startswith('train') else self._eval_mg
+            mg.log(key, value, n)
 
     def log_param(self, key, param, step):
         self.log_histogram(key + '_w', param.weight.data, step)

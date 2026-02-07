@@ -242,7 +242,6 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, line_search, sto
         "road_boundary=" +
         str(road_boundary))
     current_out_folder = os.path.join(current_out_folder, filter_type)
-    config_solver.OUT_FOLDER = current_out_folder
     fig_folder = os.path.join(current_out_folder, "figure")
     fig_prog_folder = os.path.join(fig_folder, "progress")
     os.makedirs(fig_prog_folder, exist_ok=True)
@@ -253,11 +252,11 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, line_search, sto
             'config.yaml'))
     sys.stdout = PrintLogger(
         os.path.join(
-            config_solver.OUT_FOLDER,
+            current_out_folder,
             'log.txt'))
     sys.stderr = PrintLogger(
         os.path.join(
-            config_solver.OUT_FOLDER,
+            current_out_folder,
             'log.txt'))
 
     # config_current_cost = copy.deepcopy(config_ilqr_cost)
