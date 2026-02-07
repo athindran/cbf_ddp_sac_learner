@@ -413,7 +413,7 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, is_task_rl,
     miniplot = args.miniplot
 
     if miniplot:
-        fig = plt.figure(figsize=(8.0, 2.0))
+        fig = plt.figure(figsize=(4.0, 2.0))
         axes = plt.gca()
         run_type = str(args.filter_type)
         if args.penalize_safety_filter_active:
@@ -496,6 +496,8 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, is_task_rl,
         os.makedirs(plot_folder, exist_ok=True)
         plt.savefig(f'./sac_safety_filter_summary_rollout_{args.seed}_{args.line_search}-{args.stopping_computation}/test_{run_type}_{args.plot_tag}.png', 
                     bbox_inches='tight', dpi=400)
+        plt.savefig(f'./sac_safety_filter_summary_rollout_{args.seed}_{args.line_search}-{args.stopping_computation}/test_{run_type}_{args.plot_tag}.pdf', 
+            bbox_inches='tight', dpi=400)
 
 if __name__ == '__main__':
     torch.multiprocessing.set_start_method('spawn')
