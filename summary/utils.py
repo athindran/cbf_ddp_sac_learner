@@ -47,18 +47,18 @@ def plot_bic_run_summary_mul_seeds_miniplot(axes, env, states, barrier_filter_in
     if len(complete_filter_indices)>0:
         axes.plot(states[complete_filter_indices, 0], 
                 states[complete_filter_indices, 1], 'D', 
-                color=colorlist[run_type], alpha=0.65, markersize=1.5)
+                color='k', alpha=0.65, markersize=2.5)
 
     if len(barrier_filter_indices)>0:
         axes.plot(states[barrier_filter_indices, 0], states[barrier_filter_indices, 1], 'x', 
-                    color=colorlist[run_type], alpha=0.65, markersize=1.5)
+                    color='k', alpha=0.65, markersize=2.5)
 
     axes.set_xticks(ticks=[0, 14], labels=[0, 14], fontsize=10)
     axes.set_yticks(ticks=[-3, 3], labels=[-3, 3], fontsize=10)
     axes.set_ylim([-3.2, 3.2])
     axes.set_xlim([0.0, 14.0])
-    axes.set_xlabel('X position', fontsize=10)
-    axes.set_ylabel('Y position', fontsize=10)
+    axes.set_xlabel('X position', fontsize=12)
+    axes.set_ylabel('Y position', fontsize=12)
     axes.yaxis.set_label_coords(-0.04, 0.5)
     axes.xaxis.set_label_coords(0.5, -0.04)
 

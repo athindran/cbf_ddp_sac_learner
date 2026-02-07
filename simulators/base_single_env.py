@@ -131,6 +131,8 @@ class BaseSingleEnv(BaseEnv):
         if self.penalize_safety_filter_active:
             safety_filtering_cost += -0.2 if solver_info['mark_barrier_filter'] else 0.0
             safety_filtering_cost +=  -0.3 if solver_info['mark_complete_filter'] else 0.0
+
+        if 'mark_barrier_filter' in solver_info.keys():
             info['mark_barrier_filter'] = solver_info['mark_barrier_filter']
             info['mark_complete_filter'] = solver_info['mark_complete_filter']
 
