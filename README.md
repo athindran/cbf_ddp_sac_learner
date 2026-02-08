@@ -48,27 +48,27 @@ python train_sac_withcbfddp.py -cf ./test_configs/reachability/test_config_cbf_r
 
 ## Videos
 
-#### Train with no filter, evaluate with no filter - 20 episodes
+<h3 align="center"> Train with no filter, evaluate with no filter - 20 episodes </h3>
 <p align="center">
 <img src="./videos/train_with_no_cbf_and_eval_with_no_cbf.gif" width="480" height="400" />
 </p>
 
-#### Train with no filter, evaluate with CBFDDP-SM filter - 20 episodes
+<h3 align="center"> Train with no filter, evaluate with CBFDDP-SM filter - 20 episodes </h3>
 <p align="center">
 <img src="./videos/train_with_no_cbf_and_eval_with_cbf.gif" width="480" height="400" />
 </p>
 
-#### Train with CBFDDP-SM filter and no penalty, evaluate with CBFDDP-SM filter - 20 episodes
+<h3 align="center"> Train with CBFDDP-SM filter and no penalty, evaluate with CBFDDP-SM filter - 20 episodes  </h3>
 <p align="center">
 <img src="./videos/train_with_softcbf_no_penalty_eval_rollout.gif" width="480" height="400" />
 </p>
 
-#### Train with CBFDDP-SM filter and penalty, evaluate with CBFDDP-SM filter - 20 episodes
+<h3 align="center"> Train with CBFDDP-SM filter and penalty, evaluate with CBFDDP-SM filter - 20 episodes  </h3>
 <p align="center">
 <img src="./videos/train_with_softcbf_penalty_eval_rollout.gif" width="480" height="400" />
 </p>
 
-#### Train with CBFDDP-SM filter and penalty - Training progression over 400 episodes.
+<h3 align="center"> Train with CBFDDP-SM filter and penalty - Training progression over 400 episodes.  </h3>
 <p align="center">
 <img src="./videos/training_progress.gif" width="480" height="400" />
 </p>
