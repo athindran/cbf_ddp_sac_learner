@@ -58,10 +58,10 @@ python train_sac_withcbfddp.py -cf ./test_configs/reachability/test_config_cbf_r
 <img src="./videos/train_with_no_cbf_and_eval_with_cbf.gif" width="480" height="400" />
 </p>
 
-<h3 align="center"> Train with CBFDDP-SM filter and no penalty, evaluate with CBFDDP-SM filter - 20 episodes  </h3>
+<!-- <h3 align="center"> Train with CBFDDP-SM filter and no penalty, evaluate with CBFDDP-SM filter - 20 episodes  </h3>
 <p align="center">
 <img src="./videos/train_with_softcbf_no_penalty_eval_rollout.gif" width="480" height="400" />
-</p>
+</p> -->
 
 <h3 align="center"> Train with CBFDDP-SM filter and penalty, evaluate with CBFDDP-SM filter - 20 episodes  </h3>
 <p align="center">
