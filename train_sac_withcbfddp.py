@@ -540,15 +540,16 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, is_task_rl,
                     print(f"{k}: {v[0, 1]:.1e}")
                 print("-----------------------------------------------------------")
 
-                # region: Visualizes
-                frame_skip = 10
-                for i in range(len(nominal_states) - 1):
-                    if frame_skip != 1 and (i + 1) % frame_skip != 0:
-                        continue
-                    filename = os.path.join(
-                        fig_prog_folder, str(i + 1) + ".png")
-                    image = imageio.imread(filename)
-                    writer.append_data(image)
+                if should_animate:
+                    # region: Visualizes
+                    frame_skip = 10
+                    for i in range(len(nominal_states) - 1):
+                        if frame_skip != 1 and (i + 1) % frame_skip != 0:
+                            continue
+                        filename = os.path.join(
+                            fig_prog_folder, str(i + 1) + ".png")
+                        image = imageio.imread(filename)
+                        writer.append_data(image)
 
 
 if __name__ == '__main__':
