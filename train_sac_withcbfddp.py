@@ -88,6 +88,7 @@ def parse_args():
     parser.add_argument('--log_interval', default=500, type=int)
     parser.add_argument('--training_mode', default=False, action='store_true')
     parser.add_argument('--penalize_safety_filter_active', default=False, action='store_true')
+    parser.add_argument('--training_progression_animation', default=False, action='store_true')
     parser.add_argument('--miniplot', default=False, action='store_true')
     parser.add_argument('--plot_tag', default='invalid', type=str)
 
@@ -174,7 +175,8 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, is_task_rl,
             config_agent,
             np.asarray(kwargs['barrier_filter_indices']),
             np.asarray(kwargs['complete_filter_indices']),
-            fig_prog_folder)
+            fig_prog_folder=fig_prog_folder,
+            title_aug=title_aug)
 
         if config_solver.FILTER_TYPE == "none":
             print(
@@ -352,13 +354,12 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, is_task_rl,
     else:
         model_dir = make_dir(os.path.join(args.load_dir, 'model'))
         buffer_dir = make_dir(os.path.join(args.load_dir, 'buffer'))
-        sim_images_dir = os.path.join(args.load_dir, 'sim_images')
-        os.makedirs(sim_images_dir, exist_ok=True)
 
     with open(os.path.join(args.work_dir, 'args.json'), 'w') as f:
         json.dump(vars(args), f, sort_keys=True, indent=4)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    title_aug = ""
 
     action_shape = (env.agent.dyn.dim_u,)
     obs_shape = (env.agent.dyn.dim_x,)
@@ -402,13 +403,14 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, is_task_rl,
         sac_agent.load(model_dir=model_dir,
                     step=args.load_index)
         sim_images_dir = os.path.join(args.load_dir, 'sim_images')
+        os.makedirs(sim_images_dir, exist_ok=True)    
     # obs_history, action_history, reward_history, done_history = env.simulate_trajectory_with_sac_agent(
     #      T_rollout=max_iter_receding, end_criterion='failure', sac_agent=sac_agent, verbose=True, num_trajs=10,
     #      sample_stochastically=False, should_animate=True, animate_dir=animate_dir, config_solver=config_solver,
     # )
 
     # Works only with SoftCBF filters now.
-    should_animate = False
+    should_animate = args.should_animate
 
     miniplot = args.miniplot
 
@@ -419,54 +421,127 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, is_task_rl,
         if args.penalize_safety_filter_active:
             run_type += '_penalty'
 
-    for traj_indx in range(20):
-        sim_images_dir_per_traj = os.path.join(sim_images_dir, f'traj_{traj_indx}/')
-        current_sim_images_dir = os.path.join(sim_images_dir_per_traj,
-            "road_boundary=" + str(road_boundary))
-        current_sim_images_dir = os.path.join(current_sim_images_dir, args.filter_type)
-        os.makedirs(current_sim_images_dir, exist_ok=True)
+    if not args.training_progression_animation:
+        gif_dir = os.path.join(sim_images_dir, f'traj_all_gif/')
+        current_gif_dir = os.path.join(gif_dir, args.filter_type)
+        os.makedirs(current_gif_dir, exist_ok=True)
+        gif_path = os.path.join(current_gif_dir, 'rollout.gif')
+        with imageio.get_writer(gif_path, mode='I') as writer:
+            for traj_indx in range(20):
+                sim_images_dir_per_traj = os.path.join(sim_images_dir, f'traj_{traj_indx}/')
+                current_sim_images_dir = os.path.join(sim_images_dir_per_traj,
+                    "road_boundary=" + str(road_boundary))
+                current_sim_images_dir = os.path.join(current_sim_images_dir, args.filter_type)
+                os.makedirs(current_sim_images_dir, exist_ok=True)
 
-        copyfile(
-            config_file,
-            os.path.join(
-                current_sim_images_dir,
-                'config.yaml'))
-        sys.stdout = PrintLogger(
-            os.path.join(
-                current_sim_images_dir,
-                'log.txt'))
-        sys.stderr = PrintLogger(
-            os.path.join(
-                current_sim_images_dir,
-                'log.txt'))
+                copyfile(
+                    config_file,
+                    os.path.join(
+                        current_sim_images_dir,
+                        'config.yaml'))
+                sys.stdout = PrintLogger(
+                    os.path.join(
+                        current_sim_images_dir,
+                        'log.txt'))
+                sys.stderr = PrintLogger(
+                    os.path.join(
+                        current_sim_images_dir,
+                        'log.txt'))
 
-        fig_folder = os.path.join(current_sim_images_dir, "figure")
-        fig_prog_folder = os.path.join(fig_folder, "progress")
-        os.makedirs(fig_prog_folder, exist_ok=True)
+                fig_folder = os.path.join(current_sim_images_dir, "figure")
+                fig_prog_folder = os.path.join(fig_folder, "progress")
+                os.makedirs(fig_prog_folder, exist_ok=True)
 
-        jax.clear_caches()
-        # Warmup again
-        env.agent.get_action(obs=x_cur, state=x_cur, warmup=True)
+                jax.clear_caches()
+                env.agent.get_action(obs=x_cur, state=x_cur, warmup=True)
 
-        nominal_states, result, traj_info = env.simulate_one_trajectory(
-            T_rollout=max_iter_receding, end_criterion='failure',
-            rollout_step_callback=rollout_step_callback,
-            rollout_episode_callback=rollout_episode_callback,
-            advanced_animate=should_animate,
-        )
+                nominal_states, result, traj_info = env.simulate_one_trajectory(
+                    T_rollout=max_iter_receding, end_criterion='failure',
+                    rollout_step_callback=rollout_step_callback,
+                    rollout_episode_callback=rollout_episode_callback,
+                    advanced_animate=should_animate,
+                )
 
-        print(f"--------------------RESULT: {result}----------------------")
-        print(traj_info['step_history'][-1]["done_type"])
-        constraints: Dict = traj_info['step_history'][-1]['constraints']
-        for k, v in constraints.items():
-            print(f"{k}: {v[0, 1]:.1e}")
-        print("-----------------------------------------------------------")
-        
-        if should_animate:
-            # region: Visualizes
-            gif_path = os.path.join(fig_folder, 'rollout.gif')
-            frame_skip = 10
-            with imageio.get_writer(gif_path, mode='I') as writer:
+                print(f"--------------------RESULT: {result}----------------------")
+                print(traj_info['step_history'][-1]["done_type"])
+                constraints: Dict = traj_info['step_history'][-1]['constraints']
+                for k, v in constraints.items():
+                    print(f"{k}: {v[0, 1]:.1e}")
+                print("-----------------------------------------------------------")
+                
+                if should_animate:
+                    # region: Visualizes
+                    frame_skip = 10
+                    for i in range(len(nominal_states) - 1):
+                        if frame_skip != 1 and (i + 1) % frame_skip != 0:
+                            continue
+                        filename = os.path.join(
+                            fig_prog_folder, str(i + 1) + ".png")
+                        image = imageio.imread(filename)
+                        writer.append_data(image)
+                        #Image(open(gif_path, 'rb').read(), width=400)
+                    # endregion
+
+                if not miniplot:
+                    if args.filter_type == 'SoftCBF':
+                        make_bicycle_comparison_report(
+                            sim_images_dir_per_traj,
+                            plot_folder=f'./sac_safety_filter_summary_rollout_{args.seed}_{args.line_search}-{args.stopping_computation}/',
+                            tag=plot_tag + "_" + str(args.road_boundary) + "_sim_index_" + str(traj_indx) + "_",
+                            road_boundary=args.road_boundary,
+                            dt=config_agent.DT,
+                            cbf_gamma=config_solver.CBF_GAMMA,
+                            soft_cbf_gamma=config_solver.SOFT_CBF_GAMMA,
+                            filters=['SoftCBF'])
+                else:
+                    plot_bic_run_summary_mul_seeds_miniplot(axes, env, nominal_states, traj_info['barrier_filter_indices'], traj_info['complete_filter_indices'], run_type)
+            
+            if miniplot:
+                plot_folder = f'./sac_safety_filter_summary_rollout_{args.seed}_{args.line_search}-{args.stopping_computation}'
+                os.makedirs(plot_folder, exist_ok=True)
+                plt.savefig(f'./sac_safety_filter_summary_rollout_{args.seed}_{args.line_search}-{args.stopping_computation}/test_{run_type}_{args.plot_tag}.png', 
+                            bbox_inches='tight', dpi=400)
+                plt.savefig(f'./sac_safety_filter_summary_rollout_{args.seed}_{args.line_search}-{args.stopping_computation}/test_{run_type}_{args.plot_tag}.pdf', 
+                    bbox_inches='tight', dpi=400)
+    else:
+        gif_dir = os.path.join(sim_images_dir, f'train_gif/')
+        current_gif_dir = os.path.join(gif_dir, args.filter_type)
+        os.makedirs(current_gif_dir, exist_ok=True)
+        gif_path = os.path.join(current_gif_dir, 'rollout.gif')
+        with imageio.get_writer(gif_path, mode='I') as writer:
+            # Training steps corresponding to every 100 episodes.
+            for load_iter, load_index in enumerate([0,  87106, 164846, 243879, 319999]):
+                # Load model
+                sac_agent.load(model_dir=model_dir,
+                            step=load_index)
+                sim_images_dir = os.path.join(current_gif_dir, f'sim_images_{load_index}_progress')
+                os.makedirs(sim_images_dir, exist_ok=True) 
+
+                fig_folder = os.path.join(sim_images_dir, "figure")
+                fig_prog_folder = os.path.join(fig_folder, "progress")
+                os.makedirs(fig_prog_folder, exist_ok=True)
+
+                jax.clear_caches()
+                env.agent.get_action(obs=x_cur, state=x_cur, warmup=True)
+
+                title_aug=str(f'Training progression episode {load_iter*100}')
+                print(title_aug)
+                nominal_states, result, traj_info = env.simulate_one_trajectory(
+                    T_rollout=max_iter_receding, end_criterion='failure',
+                    rollout_step_callback=rollout_step_callback,
+                    rollout_episode_callback=rollout_episode_callback,
+                    advanced_animate=should_animate,
+                )
+
+                print(f"--------------------RESULT: {result}----------------------")
+                print(traj_info['step_history'][-1]["done_type"])
+                constraints: Dict = traj_info['step_history'][-1]['constraints']
+                for k, v in constraints.items():
+                    print(f"{k}: {v[0, 1]:.1e}")
+                print("-----------------------------------------------------------")
+
+                # region: Visualizes
+                frame_skip = 10
                 for i in range(len(nominal_states) - 1):
                     if frame_skip != 1 and (i + 1) % frame_skip != 0:
                         continue
@@ -474,30 +549,7 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, is_task_rl,
                         fig_prog_folder, str(i + 1) + ".png")
                     image = imageio.imread(filename)
                     writer.append_data(image)
-                    #Image(open(gif_path, 'rb').read(), width=400)
-            # endregion
 
-        if not miniplot:
-            if args.filter_type == 'SoftCBF':
-                make_bicycle_comparison_report(
-                    sim_images_dir_per_traj,
-                    plot_folder=f'./sac_safety_filter_summary_rollout_{args.seed}_{args.line_search}-{args.stopping_computation}/',
-                    tag=plot_tag + "_" + str(args.road_boundary) + "_sim_index_" + str(traj_indx) + "_",
-                    road_boundary=args.road_boundary,
-                    dt=config_agent.DT,
-                    cbf_gamma=config_solver.CBF_GAMMA,
-                    soft_cbf_gamma=config_solver.SOFT_CBF_GAMMA,
-                    filters=['SoftCBF'])
-        else:
-            plot_bic_run_summary_mul_seeds_miniplot(axes, env, nominal_states, traj_info['barrier_filter_indices'], traj_info['complete_filter_indices'], run_type)
-
-    if miniplot:
-        plot_folder = f'./sac_safety_filter_summary_rollout_{args.seed}_{args.line_search}-{args.stopping_computation}'
-        os.makedirs(plot_folder, exist_ok=True)
-        plt.savefig(f'./sac_safety_filter_summary_rollout_{args.seed}_{args.line_search}-{args.stopping_computation}/test_{run_type}_{args.plot_tag}.png', 
-                    bbox_inches='tight', dpi=400)
-        plt.savefig(f'./sac_safety_filter_summary_rollout_{args.seed}_{args.line_search}-{args.stopping_computation}/test_{run_type}_{args.plot_tag}.pdf', 
-            bbox_inches='tight', dpi=400)
 
 if __name__ == '__main__':
     torch.multiprocessing.set_start_method('spawn')

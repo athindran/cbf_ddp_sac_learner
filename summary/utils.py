@@ -270,7 +270,7 @@ def plot_run_summary(dyn_id, env, obs_history, action_history, config_solver, co
                      fig_folder, **kwargs)
     
 def make_bic_animation_plots(env, obs_history, action_history, solver_info, safety_plan, config_solver, 
-                         config_agent, barrier_filter_indices, complete_filter_indices,
+                         config_agent, barrier_filter_indices, complete_filter_indices, title_aug="",
                          fig_prog_folder="./"):
     action_space = np.array(config_agent.ACTION_RANGE, dtype=np.float32)
 
@@ -299,14 +299,14 @@ def make_bic_animation_plots(env, obs_history, action_history, solver_info, safe
         axes[0].set_title('CBFDDP-HM', fontsize=10)
     elif config_solver.FILTER_TYPE == "SoftCBF":
         c_trace = 'b'
-        axes[0].set_title('CBFDDP-SM', fontsize=10)
+        axes[0].set_title('CBFDDP-SM' + ' ' + str(title_aug), fontsize=10.5)
 
     # track, obstacles, footprint
     env.render_obs(ax=axes[0], c=c_obs)
 
-    if solver_info['mark_complete_filter']:
+    if 'mark_complete_filter' in solver_info.keys() and solver_info['mark_complete_filter']:
         env.render_footprint(ax=axes[0], obs=obs_history[-1], c='r', lw=0.5)
-    elif solver_info['mark_barrier_filter']:
+    elif 'mark_barrier_filter' in solver_info.keys() and solver_info['mark_barrier_filter']:
         env.render_footprint(ax=axes[0], obs=obs_history[-1], c='b', lw=0.5)
     else:    
         env.render_footprint(ax=axes[0], obs=obs_history[-1], c=c_ego, lw=0.5)
@@ -432,14 +432,17 @@ def make_pvtol_animation_plots(env, obs_history, action_history, solver_info, sa
 def make_animation_plots(env, obs_history, action_history, solver_info, safety_plan, config_solver, 
                          config_agent,
                          barrier_filter_indices, complete_filter_indices,
+                         title_aug="",
                          fig_prog_folder="./"):
     if env.agent.dyn.id == "Bicycle4D" or env.agent.dyn.id == "Bicycle5D" or env.agent.dyn.id == "PointMass4D":
         make_bic_animation_plots(env, obs_history, action_history, solver_info, safety_plan, config_solver, 
                          config_agent, barrier_filter_indices, complete_filter_indices,
+                         title_aug,
                          fig_prog_folder)
     elif env.agent.dyn.id == "PVTOL6D":
         make_pvtol_animation_plots(env, obs_history, action_history, solver_info, safety_plan, config_solver,
-                         config_agent, barrier_filter_indices, complete_filter_indices, 
+                         config_agent, barrier_filter_indices, complete_filter_indices,
+                         title_aug,
                          fig_prog_folder)
 
 
