@@ -184,8 +184,7 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, is_task_rl,
                     states.shape[1] - 1,
                     solver_info['status'],
                     solver_info['Vopt'],
-                    solver_info['t_process']),
-                end=' -> ')
+                    solver_info['t_process']))
         else:
             print(
                 "[{}]: solver returns status {}, Vopt {:.1e}, future Vopt {:.1e}, marginopt {:.1e}, future marginopt {:.1e}, and uses {:.3f}.".format(
@@ -510,7 +509,7 @@ def main(config_file, road_boundary, filter_type, is_task_ilqr, is_task_rl,
         gif_path = os.path.join(current_gif_dir, 'rollout.gif')
         with imageio.get_writer(gif_path, mode='I') as writer:
             # Training steps corresponding to every 100 episodes.
-            for load_iter, load_index in enumerate([0,  87106, 164846, 243879, 319999]):
+            for load_iter, load_index in enumerate([0, 83891, 166509, 245337, 319999]):
                 # Load model
                 sac_agent.load(model_dir=model_dir,
                             step=load_index)

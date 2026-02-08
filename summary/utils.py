@@ -288,6 +288,7 @@ def make_bic_animation_plots(env, obs_history, action_history, solver_info, safe
 
     if config_solver.FILTER_TYPE == "none":
         c_trace = 'k'
+        axes[0].set_title(str(title_aug), fontsize=10)
     elif config_solver.FILTER_TYPE == "LR":
         c_trace = 'r'
         axes[0].set_title('LRDDP-HM', fontsize=10)
@@ -296,7 +297,7 @@ def make_bic_animation_plots(env, obs_history, action_history, solver_info, safe
         axes[0].set_title('LRDDP-SM', fontsize=10)
     elif config_solver.FILTER_TYPE == "CBF":
         c_trace = 'b'
-        axes[0].set_title('CBFDDP-HM', fontsize=10)
+        axes[0].set_title('CBFDDP-HM' + ' ' + str(title_aug), fontsize=10)
     elif config_solver.FILTER_TYPE == "SoftCBF":
         c_trace = 'b'
         axes[0].set_title('CBFDDP-SM' + ' ' + str(title_aug), fontsize=10.5)
@@ -311,18 +312,18 @@ def make_bic_animation_plots(env, obs_history, action_history, solver_info, safe
     else:    
         env.render_footprint(ax=axes[0], obs=obs_history[-1], c=c_ego, lw=0.5)
 
+    # historyory.
+    sc = axes[0].scatter(
+        obses[0, :-1], obses[1, :-1], s=3, c=c_trace, marker='o'
+    )
+
     # plan.
     if safety_plan is not None:
         axes[0].plot(
             safety_plan[0, :], safety_plan[1, :], linewidth=0.5,
             c='g', label='Safety plan'
         )
-
-    # historyory.
-    sc = axes[0].scatter(
-        obses[0, :-1], obses[1, :-1], s=3, c=c_trace, marker='o'
-    )
-    axes[0].legend(fontsize=9, loc='upper left', bbox_to_anchor=(-0.6, 1.26), framealpha=0, fancybox=False, shadow=False)
+        axes[0].legend(fontsize=9, loc='upper left', bbox_to_anchor=(-0.6, 1.26), framealpha=0, fancybox=False, shadow=False)
     
     axes[0].set_xticks(ticks=[0, env.visual_extent[1]], labels=[0, env.visual_extent[1]], fontsize=8)
     axes[0].set_yticks(ticks=[env.visual_extent[2], env.visual_extent[3]], 
