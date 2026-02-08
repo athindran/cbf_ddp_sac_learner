@@ -341,37 +341,41 @@ class BaseSingleEnv(BaseEnv):
 
 
             if advanced_animate:
-                if self.cost_type=="Reachability":
-                    safety_plan = np.asarray(solver_info['states'])
-                elif self.cost_type=="Reachavoid":
-                    # We plot the safety plan where we enter the target set, then
-                    # decelerate and stop to remain safe for infinite time for an
-                    # infeasible task plan
+                if self.agent.policy_type == "iLQRSafetyFilter":
+                    if self.cost_type=="Reachability":
+                        safety_plan = np.asarray(solver_info['states'])
+                    elif self.cost_type=="Reachavoid":
+                        # We plot the safety plan where we enter the target set, then
+                        # decelerate and stop to remain safe for infinite time for an
+                        # infeasible task plan
 
-                    reachavoid_plan = solver_info['states']
-                    reachavoid_plan_ctrl = solver_info['controls']
-                    critical = solver_info['critical']
+                        reachavoid_plan = solver_info['states']
+                        reachavoid_plan_ctrl = solver_info['controls']
+                        critical = solver_info['critical']
 
-                    target_margins = self.cost.get_mapped_target_margin(
-                        reachavoid_plan, reachavoid_plan_ctrl)
+                        target_margins = self.cost.get_mapped_target_margin(
+                            reachavoid_plan, reachavoid_plan_ctrl)
 
-                    target_margins = np.array(target_margins)
+                        target_margins = np.array(target_margins)
 
-                    is_inside_target_index = np.argwhere(critical!=0).ravel()
+                        is_inside_target_index = np.argwhere(critical!=0).ravel()
 
-                    if is_inside_target_index.size == 0:
-                        is_inside_target_index = 0
-                    else:
-                        is_inside_target_index = is_inside_target_index[0]
+                        if is_inside_target_index.size == 0:
+                            is_inside_target_index = 0
+                        else:
+                            is_inside_target_index = is_inside_target_index[0]
 
-                    target_plan = np.array(
-                        reachavoid_plan[:, 0:is_inside_target_index + 1])
+                        target_plan = np.array(
+                            reachavoid_plan[:, 0:is_inside_target_index + 1])
 
-                    stopping_plan = self.simulate_stopping_plan(initial_state=np.array(reachavoid_plan[:, is_inside_target_index]),
-                                                                stopping_ctrl=np.array([self.agent.dyn.ctrl_space[0, 0], 0]))
+                        stopping_plan = self.simulate_stopping_plan(initial_state=np.array(reachavoid_plan[:, is_inside_target_index]),
+                                                                    stopping_ctrl=np.array([self.agent.dyn.ctrl_space[0, 0], 0]))
 
-                    safety_plan = np.concatenate(
-                    (target_plan, np.array(stopping_plan).T), axis=1)
+                        safety_plan = np.concatenate(
+                        (target_plan, np.array(stopping_plan).T), axis=1)
+                else:
+                    safety_plan = None
+
                 if rollout_step_callback is not None:
                     rollout_step_callback(
                         self, state_history, obs_history, action_history, plan_history, step_history, safety_plan=safety_plan, 

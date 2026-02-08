@@ -196,7 +196,8 @@ class Agent:
                 'num_iters': 0,
                 'Vopt': -1,
                 'deviation': -1,
-
+                'status': -1,
+                't_process': -1,
             }
 
         _action_dict[self.id] = _action
