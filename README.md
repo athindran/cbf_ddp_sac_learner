@@ -68,6 +68,20 @@ python train_sac_withcbfddp.py -cf ./test_configs/reachability/test_config_cbf_r
 <img src="./videos/train_with_softcbf_penalty_eval_rollout.gif" width="480" height="400" />
 </p>
 
+## Training progression
+
+<h3 align="center"> Train with CBFDDP-SM filter and penalty - Training progression over 400 episodes.  </h3>
+<p align="center">
+<img src="./videos/training_progress.gif" width="480" height="400" />
+</p>
+
+
+<h3 align="center"> Train with CBFDDP-SM filter and penalty - Training progression over 400 episodes - what if we removed the safety filter?  </h3>
+<p align="center">
+<img src="./videos/training_progress_counterfactual.gif" width="480" height="400" />
+</p>
+
+
 ## Acknowledgements
 
 This code is based on the previous codebase of Safe Robotics Lab in Princeton ( https://saferobotics.princeton.edu/ )
