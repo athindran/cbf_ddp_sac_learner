@@ -102,5 +102,6 @@ For the SAC training loop, we refer to ( https://github.com/MishaLaskin/curl ). 
 ## Contact
 
 Author: Athindran Ramesh Kumar, Princeton ECE
+
 For any questions, reach out to rameshkumarathindran[at]gmail.com 
 
