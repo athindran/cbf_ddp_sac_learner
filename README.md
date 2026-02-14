@@ -84,8 +84,8 @@ If the agent is trained with the CBFDDP filter and an additional filtering penal
 (Left) Here we show the training progression every 100 episodes with the safety filter in the loop. Failure is averted in intermediate episodes at the expense of harsh braking at some intervals. This is unavoidable as the task policy intentionally collides with the obstacle to activate the safety filter. By the end of training, the agent learns not to collide with the obstacle.
 (Right) Counterfactual of the previous episodes without the safety filter. Without the safety filter, the agent collides with the obstacle at high velocity in the intermediate episode.
 <p align="left">
-<img src="./videos/training_progress.gif" width="480" height="400" />
-<img src="./videos/training_progress_counterfactual.gif" width="480" height="400" />
+<img src="./videos/training_progress.gif" width="380" height="300" />
+<img src="./videos/training_progress_counterfactual.gif" width="380" height="300" />
 </p>
 
 
