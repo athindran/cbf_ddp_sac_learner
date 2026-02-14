@@ -85,9 +85,6 @@ If the agent is trained with the CBFDDP filter and an additional filtering penal
 (Right) Counterfactual of the previous episodes without the safety filter. Without the safety filter, the agent collides with the obstacle at high velocity in the intermediate episode.
 <p align="left">
 <img src="./videos/training_progress.gif" width="480" height="400" />
-</p>
-
-<p align="right">
 <img src="./videos/training_progress_counterfactual.gif" width="480" height="400" />
 </p>
 
