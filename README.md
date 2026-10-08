@@ -1,5 +1,7 @@
 # CBF-DDP V2 within a training loop
-This is an extension for using https://github.com/athindran/CBFDDP_Soft_v2 within a Soft Actor-Critic training loop. The code is not clean enough to be made public.
+This is an extension for using [CBFDDPV2](https://github.com/athindran/CBFDDP_Soft_v2) within a Soft Actor-Critic training loop.
+
+Update: Dissertation is now public [Link](https://www.proquest.com/dissertations-theses/online-safety-filtering-autonomous-control/docview/3396044705/se-2?accountid=167280)
 
 # Usage Instructions
 
