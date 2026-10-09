@@ -1,7 +1,7 @@
 # CBF-DDP V2 within a training loop
 This is an extension for using [CBFDDPV2](https://github.com/athindran/CBFDDP_Soft_v2) within a Soft Actor-Critic training loop.
 
-Update: Dissertation is now public [Link](https://www.proquest.com/docview/3396044705/8DAB0264DDF046C2PQ/1?accountid=167280&sourcetype=Dissertations%20&%20Theses)
+Update: Dissertation is now public [Link]((https://www.proquest.com/docview/3396044705/A18F8F310B1D4E77PQ/1?sourcetype=Dissertations%20&%20Theses)
 
 # Usage Instructions
 
